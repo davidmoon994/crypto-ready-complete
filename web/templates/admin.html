@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理后台</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; }
+        .navbar { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center; }
+        .navbar h1 { font-size: 24px; }
+        .navbar button { padding: 8px 20px; background: rgba(255,255,255,0.2); color: white; border: 1px solid white; border-radius: 8px; cursor: pointer; }
+        .container { max-width: 1400px; margin: 30px auto; padding: 0 20px; }
+        .section { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); margin-bottom: 25px; }
+        .section h2 { margin-bottom: 20px; color: #333; border-bottom: 3px solid #667eea; padding-bottom: 10px; }
+        .wallet-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+        .wallet-card { border: 2px solid #e0e0e0; border-radius: 12px; padding: 20px; }
+        .wallet-card.active { border-color: #10b981; background: #f0fdf4; }
+        .wallet-card h3 { color: #667eea; margin-bottom: 10px; }
+        .wallet-balance { font-size: 24px; font-weight: bold; color: #10b981; margin: 15px 0; }
+        .btn { padding: 10px 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; margin: 5px; }
+        .btn:hover { transform: translateY(-2px); }
+        .btn-success { background: #10b981; }
+        table { width: 100%; border-collapse: collapse; }
+        table th { text-align: left; padding: 15px; background: #f8f9fa; font-weight: 600; color: #666; }
+        table td { padding: 15px; border-bottom: 1px solid #e9ecef; }
+        table tr:hover { background: #f8f9fa; }
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; }
+        .modal.active { display: flex; }
+        .modal-content { background: white; padding: 30px; border-radius: 15px; max-width: 600px; width: 90%; max-height: 90vh; overflow-y: auto; }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: 600; }
+        .form-group input, .form-group select { width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px; }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <h1>⚙️ 管理后台</h1>
+        <button onclick="logout()">退出</button>
+    </div>
+    <div class="container">
+        <div class="section">
+            <h2>💼 钱包状态总览</h2>
+            <div class="wallet-grid" id="walletGrid"></div>
+            <button class="btn btn-success" onclick="manualCheck()">🔄 手动检查余额</button>
+            <button class="btn" onclick="showConfigModal()">⚙️ 配置钱包</button>
+        </div>
+        <div class="section">
+            <h2>👥 用户管理</h2>
+            <button class="btn" onclick="showCreateUserModal()">+ 创建用户</button>
+            <button class="btn btn-success" onclick="showRechargeModal()">💰 充值</button>
+            <table><thead><tr><th>手机号</th><th>总充值</th><th>当前价值</th><th>盈亏</th><th>笔数</th></tr></thead><tbody id="usersBody"></tbody></table>
+        </div>
+    </div>
+    
+    <div id="configModal" class="modal">
+        <div class="modal-content">
+            <h3>配置钱包</h3>
+            <form id="binanceForm" onsubmit="saveConfig(event, 'Binance')">
+                <h4>Binance</h4>
+                <div class="form-group"><label>API Key</label><input id="binance_key"></div>
+                <div class="form-group"><label>API Secret</label><input id="binance_secret"></div>
+                <button type="submit" class="btn">保存</button>
+            </form>
+            <form id="okxForm" onsubmit="saveConfig(event, 'OKX')">
+                <h4>OKX</h4>
+                <div class="form-group"><label>API Key</label><input id="okx_key"></div>
+                <div class="form-group"><label>API Secret</label><input id="okx_secret"></div>
+                <button type="submit" class="btn">保存</button>
+            </form>
+            <form id="walletForm" onsubmit="saveConfig(event, 'Wallet')">
+                <h4>Wallet</h4>
+                <div class="form-group"><label>钱包地址</label><input id="wallet_address"></div>
+                <button type="submit" class="btn">保存</button>
+            </form>
+            <button class="btn" onclick="closeConfigModal()">关闭</button>
+        </div>
+    </div>
+    
+    <div id="createUserModal" class="modal">
+        <div class="modal-content">
+            <h3>创建用户</h3>
+            <form id="createUserForm">
+                <div class="form-group"><label>手机号</label><input id="createPhone" required></div>
+                <p style="color: #999;">密码将自动设置为：abc123456</p>
+                <button type="submit" class="btn">创建</button>
+                <button type="button" class="btn" onclick="closeCreateUserModal()">取消</button>
+            </form>
+        </div>
+    </div>
+    
+    <div id="rechargeModal" class="modal">
+        <div class="modal-content">
+            <h3>用户充值</h3>
+            <form id="rechargeForm">
+                <div class="form-group"><label>选择用户</label><select id="rechargeUserId" required></select></div>
+                <div class="form-group"><label>充值到</label>
+                    <select id="rechargeAccount" required>
+                        <option value="1">Binance</option>
+                        <option value="2">OKX</option>
+                        <option value="3">Wallet</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>金额</label><input type="number" id="rechargeAmount" required step="0.01"></div>
+                <div class="form-group"><label>币种</label>
+                    <select id="rechargeCurrency" required>
+                        <option value="USDC">USDC</option>
+                        <option value="USDT">USDT</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-success">确认充值</button>
+                <button type="button" class="btn" onclick="closeRechargeModal()">取消</button>
+            </form>
+        </div>
+    </div>
+    
+    <script>
+        const API_URL = 'http://localhost:8080/api';
+        let authHeader = '';
+        
+        function checkAuth() {
+            const phone = localStorage.getItem('phone');
+            const password = localStorage.getItem('password');
+            if (!phone || !password || phone !== 'admin') {
+                window.location.href = '/';
+                return false;
+            }
+            authHeader = 'Basic ' + btoa(phone + ':' + password);
+            return true;
+        }
+        
+        async function loadWallets() {
+            const response = await fetch(`${API_URL}/admin/accounts/status`, { headers: { 'Authorization': authHeader } });
+            if (response.ok) {
+                const data = await response.json();
+                const grid = document.getElementById('walletGrid');
+                grid.innerHTML = data.accounts.map(a => `
+                    <div class="wallet-card ${a.is_configured ? 'active' : ''}">
+                        <h3>${a.account_type}</h3>
+                        <div>地址: ${a.address || '未配置'}</div>
+                        <div class="wallet-balance">$${a.current_balance.toFixed(2)}</div>
+                        <div>变化: ${a.daily_change >= 0 ? '+' : ''}$${a.daily_change.toFixed(2)} (${a.daily_change_rate >= 0 ? '+' : ''}${a.daily_change_rate.toFixed(2)}%)</div>
+                    </div>
+                `).join('');
+            }
+        }
+        
+        async function loadUsers() {
+            const response = await fetch(`${API_URL}/admin/users`, { headers: { 'Authorization': authHeader } });
+            if (response.ok) {
+                const data = await response.json();
+                const tbody = document.getElementById('usersBody');
+                const select = document.getElementById('rechargeUserId');
+                const users = data || []
+                tbody.innerHTML = data.users.map(u => `
+                    <tr>
+                        <td>${u.phone}</td>
+                        <td>$${u.total_recharge.toFixed(2)}</td>
+                        <td>$${u.current_value.toFixed(2)}</td>
+                        <td style="color: ${u.total_profit >= 0 ? '#10b981' : '#ef4444'}">
+                            ${u.total_profit >= 0 ? '+' : ''}$${u.total_profit.toFixed(2)}
+                        </td>
+                        <td>${u.recharge_count}</td>
+                    </tr>
+                `).join('');
+                select.innerHTML = '<option value="">选择用户</option>' + data.users.map(u => `<option value="${u.user_id}">${u.phone}</option>`).join('');
+            }
+        }
+        
+        function showConfigModal() { document.getElementById('configModal').classList.add('active'); }
+        function closeConfigModal() { document.getElementById('configModal').classList.remove('active'); }
+        function showCreateUserModal() { document.getElementById('createUserModal').classList.add('active'); }
+        function closeCreateUserModal() { document.getElementById('createUserModal').classList.remove('active'); }
+        function showRechargeModal() { document.getElementById('rechargeModal').classList.add('active'); }
+        function closeRechargeModal() { document.getElementById('rechargeModal').classList.remove('active'); }
+        
+        async function saveConfig(e, type) {
+            e.preventDefault();
+            const config = { account_type: type };
+            if (type === 'Wallet') {
+                config.wallet_address = document.getElementById('wallet_address').value;
+            } else {
+                config.api_key = document.getElementById(`${type.toLowerCase()}_key`).value;
+                config.api_secret = document.getElementById(`${type.toLowerCase()}_secret`).value;
+            }
+            const response = await fetch(`${API_URL}/admin/accounts/config`, {
+                method: 'POST',
+                headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+                body: JSON.stringify(config)
+            });
+            if (response.ok) {
+                alert('配置保存成功！');
+                loadWallets();
+            }
+        }
+        
+        document.getElementById('createUserForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const response = await fetch(`${API_URL}/admin/users`, {
+                method: 'POST',
+                headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone: document.getElementById('createPhone').value })
+            });
+            if (response.ok) {
+                alert('用户创建成功！密码：abc123456');
+                closeCreateUserModal();
+                loadUsers();
+            }
+        });
+        
+        document.getElementById('rechargeForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const data = {
+                user_id: parseInt(document.getElementById('rechargeUserId').value),
+                admin_account_id: parseInt(document.getElementById('rechargeAccount').value),
+                amount: parseFloat(document.getElementById('rechargeAmount').value),
+                currency: document.getElementById('rechargeCurrency').value
+            };
+            const response = await fetch(`${API_URL}/admin/recharge`, {
+                method: 'POST',
+                headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            if (response.ok) {
+                alert('充值成功！');
+                closeRechargeModal();
+                loadUsers();
+            }
+        });
+        
+        async function manualCheck() {
+            const response = await fetch(`${API_URL}/admin/manual-check`, {
+                method: 'POST',
+                headers: { 'Authorization': authHeader }
+            });
+            if (response.ok) {
+                alert('余额检查完成！');
+                loadWallets();
+                loadUsers();
+            }
+        }
+        
+        function logout() {
+            localStorage.clear();
+            window.location.href = '/';
+        }
+        
+        if (checkAuth()) {
+            loadWallets();
+            loadUsers();
+            setInterval(() => { loadWallets(); loadUsers(); }, 30000);
+        }
+    </script>
+</body>
+</html>

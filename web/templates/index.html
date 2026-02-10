@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录 - 财务管理系统</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+            max-width: 400px;
+            width: 100%;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px 30px;
+            text-align: center;
+        }
+        .header h1 { font-size: 28px; margin-bottom: 10px; }
+        .form-container { padding: 40px 30px; }
+        .form-group { margin-bottom: 20px; }
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 15px;
+        }
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4); }
+        .message {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .message.success { background: #d4edda; color: #155724; }
+        .message.error { background: #f8d7da; color: #721c24; }
+        .tip { margin-top: 20px; text-align: center; color: #999; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>💰 财务管理系统</h1>
+            <p>加密货币盈亏追踪</p>
+        </div>
+        <div class="form-container">
+            <div id="message" class="message"></div>
+            <form id="loginForm">
+                <div class="form-group">
+                    <label>手机号/账号</label>
+                    <input type="text" id="phone" required>
+                </div>
+                <div class="form-group">
+                    <label>密码</label>
+                    <input type="password" id="password" required>
+                </div>
+                <button type="submit" class="btn">登录</button>
+            </form>
+            <div class="tip">
+                <p>管理员: admin / admin123</p>
+                <p>普通用户密码: abc123456</p>
+            </div>
+        </div>
+    </div>
+    <script>
+        const API_URL = 'http://localhost:8080/api';
+        function showMessage(text, type) {
+            const msg = document.getElementById('message');
+            msg.textContent = text;
+            msg.className = `message ${type}`;
+            msg.style.display = 'block';
+        }
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const phone = document.getElementById('phone').value;
+            const password = document.getElementById('password').value;
+            try {
+                const response = await fetch(`${API_URL}/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phone, password })
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    localStorage.setItem('phone', phone);
+                    localStorage.setItem('password', password);
+                    localStorage.setItem('userId', data.user.id);
+                    localStorage.setItem('isAdmin', data.user.is_admin);
+                    showMessage('登录成功！正在跳转...', 'success');
+                    setTimeout(() => {
+                        window.location.href = data.user.is_admin ? '/admin' : '/dashboard';
+                    }, 1000);
+                } else {
+                    showMessage(data.error || '登录失败', 'error');
+                }
+            } catch (error) {
+                showMessage('网络错误：' + error.message, 'error');
+            }
+        });
+    </script>
+</body>
+</html>
