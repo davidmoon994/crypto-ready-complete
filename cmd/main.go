@@ -15,8 +15,31 @@ import (
 )
 
 func main() {
+	// 读取环境变量
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080" // 本地开发默认端口
+	}
+
+	dbPath := os.Getenv("DB_PATH")
+	if dbPath == "" {
+		dbPath = "crypto_final.db"
+	}
+
+	// 获取管理员密码（必须）
+	adminPassword := os.Getenv("ADMIN_PASSWORD")
+	if adminPassword == "" {
+		log.Fatal("❌ 错误: 必须设置 ADMIN_PASSWORD 环境变量")
+	}
+
+	// 获取用户默认密码（可选）
+	userPassword := os.Getenv("USER_PASSWORD")
+	if userPassword == "" {
+		userPassword = "user123456" // 默认密码
+	}
+
 	// 初始化数据库
-	repo, err := repository.NewRepository("crypto_final.db")
+	repo, err := repository.NewRepository(dbPath, adminPassword)
 	if err != nil {
 		log.Fatalf("初始化数据库失败: %v", err)
 	}
@@ -24,6 +47,7 @@ func main() {
 
 	// 初始化服务层
 	svc := service.NewService(repo)
+	svc.SetUserDefaultPassword(userPassword) // 设置用户默认密码
 
 	// 初始化处理器
 	h := handler.NewHandler(svc)
@@ -34,7 +58,12 @@ func main() {
 	defer sched.Stop()
 
 	// 设置Gin模式
-	gin.SetMode(gin.ReleaseMode)
+	ginMode := os.Getenv("GIN_MODE")
+	if ginMode == "" {
+		ginMode = gin.ReleaseMode
+	}
+	gin.SetMode(ginMode)
+
 	r := gin.Default()
 
 	// CORS中间件
@@ -105,19 +134,18 @@ func main() {
 	fmt.Println("╔════════════════════════════════════════════════╗")
 	fmt.Println("║   加密货币盈亏追踪系统                          ║")
 	fmt.Println("╠════════════════════════════════════════════════╣")
-	fmt.Println("║  服务地址: http://localhost:8080              ║")
-	fmt.Println("║  登录页:   http://localhost:8080              ║")
-	fmt.Println("║  管理后台: http://localhost:8080/admin        ║")
-	fmt.Println("║  用户页面: http://localhost:8080/dashboard    ║")
+	fmt.Printf("║  服务端口: %s                                  ║\n", port)
+	fmt.Println("║  登录页:   /                                   ║")
+	fmt.Println("║  管理后台: /admin                              ║")
+	fmt.Println("║  用户页面: /dashboard                          ║")
 	fmt.Println("╠════════════════════════════════════════════════╣")
-	fmt.Println("║  默认管理员: admin / admin123                 ║")
-	fmt.Println("║  普通用户密码: abc123456                      ║")
+	fmt.Println("║  管理员账号: admin                             ║")
 	fmt.Printf("║  下次检查: %s  ║\n", sched.GetNextRun().Format("2006-01-02 15:04:05"))
 	fmt.Println("╚════════════════════════════════════════════════╝")
 
 	// 优雅关闭
 	go func() {
-		if err := r.Run(":8080"); err != nil {
+		if err := r.Run(":" + port); err != nil {
 			log.Fatalf("服务启动失败: %v", err)
 		}
 	}()

@@ -2,7 +2,9 @@ package repository
 
 import (
 	"crypto-final/internal/model"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -16,7 +18,7 @@ type Record struct {
 	CreatedAt time.Time
 }
 
-func NewRepository(dbPath string) (*Repository, error) {
+func NewRepository(dbPath string, adminPassword string) (*Repository, error) {
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return nil, err
@@ -27,14 +29,14 @@ func NewRepository(dbPath string) (*Repository, error) {
 	}
 
 	repo := &Repository{db: db}
-	if err := repo.InitDB(); err != nil {
+	if err := repo.InitDB(adminPassword); err != nil {
 		return nil, err
 	}
 
 	return repo, nil
 }
 
-func (r *Repository) InitDB() error {
+func (r *Repository) InitDB(adminPassword string) error {
 	schema := `
 	CREATE TABLE IF NOT EXISTS users (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -99,12 +101,15 @@ func (r *Repository) InitDB() error {
 		return err
 	}
 
-	// 创建默认管理员
-	defaultAdmin := `INSERT OR IGNORE INTO users (id, phone, password_hash, is_admin)
-	VALUES (1, 'admin', '240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9', 1);`
-	_, _ = r.db.Exec(defaultAdmin)
+	// 创建默认管理员（使用环境变量密码）
+	passwordHash := hashPassword(adminPassword)
+	defaultAdmin := `
+	INSERT OR IGNORE INTO users (id, phone, password_hash, is_admin)
+	VALUES (1, 'admin', ?, 1);
+	`
+	_, err = r.db.Exec(defaultAdmin, passwordHash)
 
-	// 创建3个Admin账户
+	// 初始化3个Admin账户
 	accounts := `
 	INSERT OR IGNORE INTO admin_accounts (id, account_type) VALUES (1, 'Binance');
 	INSERT OR IGNORE INTO admin_accounts (id, account_type) VALUES (2, 'OKX');
@@ -112,7 +117,13 @@ func (r *Repository) InitDB() error {
 	`
 	_, _ = r.db.Exec(accounts)
 
-	return nil
+	return err
+}
+
+// hashPassword 计算密码哈希
+func hashPassword(password string) string {
+	hash := sha256.Sum256([]byte(password))
+	return hex.EncodeToString(hash[:])
 }
 
 // User operations

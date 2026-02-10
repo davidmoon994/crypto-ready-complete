@@ -91,23 +91,27 @@
                 <button type="submit" class="btn">登录</button>
             </form>
             <div class="tip">
-                <p>管理员: admin / admin123</p>
-                <p>普通用户密码: abc123456</p>
+                <p>请联系管理员获取登录凭证</p>
             </div>
         </div>
     </div>
     <script>
-        const API_URL = 'http://localhost:8080/api';
+        // 动态获取API地址
+        const API_URL = window.location.origin + '/api';
+    
         function showMessage(text, type) {
             const msg = document.getElementById('message');
             msg.textContent = text;
             msg.className = `message ${type}`;
             msg.style.display = 'block';
         }
+    
         document.getElementById('loginForm').addEventListener('submit', async (e) => {
             e.preventDefault();
+            
             const phone = document.getElementById('phone').value;
             const password = document.getElementById('password').value;
+    
             try {
                 const response = await fetch(`${API_URL}/login`, {
                     method: 'POST',

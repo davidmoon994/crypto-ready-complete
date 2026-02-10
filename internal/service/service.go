@@ -11,15 +11,22 @@ import (
 )
 
 type Service struct {
-	repo          *repository.Repository
-	walletService *WalletService
+	repo                *repository.Repository
+	walletService       *WalletService
+	userDefaultPassword string
 }
 
 func NewService(repo *repository.Repository) *Service {
 	return &Service{
-		repo:          repo,
-		walletService: NewWalletService(),
+		repo:                repo,
+		walletService:       NewWalletService(),
+		userDefaultPassword: "user123456", // 默认值
 	}
+}
+
+// SetUserDefaultPassword 设置用户默认密码
+func (s *Service) SetUserDefaultPassword(password string) {
+	s.userDefaultPassword = password
 }
 
 // HashPassword 密码哈希
@@ -57,9 +64,8 @@ func (s *Service) AdminCreateUser(phone string) (int64, error) {
 		return 0, errors.New("手机号已存在")
 	}
 
-	// 固定密码 abc123456
-	fixedPassword := "abc123456"
-	passwordHash := s.HashPassword(fixedPassword)
+	// 使用配置的默认密码
+	passwordHash := s.HashPassword(s.userDefaultPassword)
 
 	return s.repo.CreateUser(phone, passwordHash)
 }
