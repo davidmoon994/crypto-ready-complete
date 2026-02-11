@@ -145,7 +145,11 @@ func (ws *WalletService) getOKXBalance(account *model.AdminAccount) (float64, er
 	req.Header.Set("OK-ACCESS-KEY", account.APIKey)
 	req.Header.Set("OK-ACCESS-SIGN", signature)
 	req.Header.Set("OK-ACCESS-TIMESTAMP", timestamp)
-	req.Header.Set("OK-ACCESS-PASSPHRASE", account.WalletAddress) // OKX需要Passphrase，暂存在WalletAddress字段
+	passphrase := account.Passphrase
+	if passphrase == "" {
+		return 0, fmt.Errorf("未配置OKX Passphrase")
+	}
+	req.Header.Set("OK-ACCESS-PASSPHRASE", passphrase)
 	req.Header.Set("Content-Type", "application/json")
 
 	// 发送请求

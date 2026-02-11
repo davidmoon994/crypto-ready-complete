@@ -156,13 +156,20 @@ func (h *Handler) AdminGetAccountsStatus(c *gin.Context) {
 
 // AdminConfigAccount 配置Admin账户
 func (h *Handler) AdminConfigAccount(c *gin.Context) {
-	var req model.AdminAccountConfigRequest
+	var req struct {
+		AccountType   string `json:"account_type" binding:"required"`
+		APIKey        string `json:"api_key,omitempty"`
+		APISecret     string `json:"api_secret,omitempty"`
+		WalletAddress string `json:"wallet_address,omitempty"`
+		Passphrase    string `json:"passphrase,omitempty"` // 新增
+	}
+
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数错误"})
 		return
 	}
 
-	err := h.service.ConfigAdminAccount(req.AccountType, req.APIKey, req.APISecret, req.WalletAddress)
+	err := h.service.ConfigAdminAccount(req.AccountType, req.APIKey, req.APISecret, req.WalletAddress, req.Passphrase)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

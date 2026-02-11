@@ -52,6 +52,7 @@ func (r *Repository) InitDB(adminPassword string) error {
 		api_key TEXT,
 		api_secret TEXT,
 		wallet_address TEXT,
+		passphrase TEXT,           -- ← 新增
 		current_balance REAL DEFAULT 0,
 		is_active BOOLEAN DEFAULT 1,
 		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -175,14 +176,14 @@ func (r *Repository) GetAllDashboardUsers() ([]*model.User, error) {
 // AdminAccount operations
 func (r *Repository) GetAdminAccountByID(id int) (*model.AdminAccount, error) {
 	acc := &model.AdminAccount{}
-	var apiKey, apiSecret, walletAddress sql.NullString
+	var apiKey, apiSecret, walletAddress, passphrase sql.NullString // ← 添加 passphrase
 
 	err := r.db.QueryRow(
-		`SELECT id, account_type, api_key, api_secret, wallet_address, current_balance, is_active, updated_at
+		`SELECT id, account_type, api_key, api_secret, wallet_address, passphrase, current_balance, is_active, updated_at
 		 FROM admin_accounts WHERE id = ?`,
 		id,
 	).Scan(&acc.ID, &acc.AccountType, &apiKey, &apiSecret,
-		&walletAddress, &acc.CurrentBalance, &acc.IsActive, &acc.UpdatedAt)
+		&walletAddress, &passphrase, &acc.CurrentBalance, &acc.IsActive, &acc.UpdatedAt)
 
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -195,20 +196,21 @@ func (r *Repository) GetAdminAccountByID(id int) (*model.AdminAccount, error) {
 	acc.APIKey = apiKey.String
 	acc.APISecret = apiSecret.String
 	acc.WalletAddress = walletAddress.String
+	acc.Passphrase = passphrase.String // ← 新增
 
 	return acc, nil
 }
 
 func (r *Repository) GetAdminAccountByType(accountType string) (*model.AdminAccount, error) {
 	acc := &model.AdminAccount{}
-	var apiKey, apiSecret, walletAddress sql.NullString
+	var apiKey, apiSecret, walletAddress, passphrase sql.NullString // ← 添加 passphrase
 
 	err := r.db.QueryRow(
-		`SELECT id, account_type, api_key, api_secret, wallet_address, current_balance, is_active, updated_at
+		`SELECT id, account_type, api_key, api_secret, wallet_address, passphrase, current_balance, is_active, updated_at
 		 FROM admin_accounts WHERE account_type = ?`,
 		accountType,
 	).Scan(&acc.ID, &acc.AccountType, &apiKey, &apiSecret,
-		&walletAddress, &acc.CurrentBalance, &acc.IsActive, &acc.UpdatedAt)
+		&walletAddress, &passphrase, &acc.CurrentBalance, &acc.IsActive, &acc.UpdatedAt)
 
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -221,13 +223,14 @@ func (r *Repository) GetAdminAccountByType(accountType string) (*model.AdminAcco
 	acc.APIKey = apiKey.String
 	acc.APISecret = apiSecret.String
 	acc.WalletAddress = walletAddress.String
+	acc.Passphrase = passphrase.String // ← 新增
 
 	return acc, nil
 }
 
 func (r *Repository) GetAllAdminAccounts() ([]*model.AdminAccount, error) {
 	rows, err := r.db.Query(
-		`SELECT id, account_type, api_key, api_secret, wallet_address, current_balance, is_active, updated_at
+		`SELECT id, account_type, api_key, api_secret, wallet_address, passphrase, current_balance, is_active, updated_at
 		 FROM admin_accounts ORDER BY id`,
 	)
 	if err != nil {
@@ -238,10 +241,10 @@ func (r *Repository) GetAllAdminAccounts() ([]*model.AdminAccount, error) {
 	var accounts []*model.AdminAccount
 	for rows.Next() {
 		acc := &model.AdminAccount{}
-		var apiKey, apiSecret, walletAddress sql.NullString
+		var apiKey, apiSecret, walletAddress, passphrase sql.NullString // ← 添加 passphrase
 
 		err := rows.Scan(&acc.ID, &acc.AccountType, &apiKey, &apiSecret,
-			&walletAddress, &acc.CurrentBalance, &acc.IsActive, &acc.UpdatedAt)
+			&walletAddress, &passphrase, &acc.CurrentBalance, &acc.IsActive, &acc.UpdatedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -250,17 +253,19 @@ func (r *Repository) GetAllAdminAccounts() ([]*model.AdminAccount, error) {
 		acc.APIKey = apiKey.String
 		acc.APISecret = apiSecret.String
 		acc.WalletAddress = walletAddress.String
+		acc.Passphrase = passphrase.String // ← 新增
 
 		accounts = append(accounts, acc)
 	}
 	return accounts, nil
 }
 
-func (r *Repository) UpdateAdminAccountConfig(accountType, apiKey, apiSecret, walletAddress string) error {
+func (r *Repository) UpdateAdminAccountConfig(accountType, apiKey, apiSecret, walletAddress, passphrase string) error {
 	_, err := r.db.Exec(
-		`UPDATE admin_accounts SET api_key=?, api_secret=?, wallet_address=?, is_active=1, updated_at=CURRENT_TIMESTAMP
+		`UPDATE admin_accounts 
+		 SET api_key=?, api_secret=?, wallet_address=?, passphrase=?, is_active=1, updated_at=CURRENT_TIMESTAMP
 		 WHERE account_type=?`,
-		apiKey, apiSecret, walletAddress, accountType,
+		apiKey, apiSecret, walletAddress, passphrase, accountType,
 	)
 	return err
 }

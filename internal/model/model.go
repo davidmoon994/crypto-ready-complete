@@ -20,6 +20,7 @@ type AdminAccount struct {
 	APIKey         string    `json:"api_key,omitempty"`
 	APISecret      string    `json:"api_secret,omitempty"`
 	WalletAddress  string    `json:"wallet_address,omitempty"`
+	Passphrase     string    `json:"passphrase,omitempty"` // ← 新增
 	CurrentBalance float64   `json:"current_balance"`
 	IsActive       bool      `json:"is_active"`
 	UpdatedAt      time.Time `json:"updated_at"`

@@ -181,8 +181,8 @@ func (s *Service) GetAdminAccountsStatus() ([]*model.AdminAccountStatusResponse,
 }
 
 // ConfigAdminAccount 配置Admin账户
-func (s *Service) ConfigAdminAccount(accountType, apiKey, apiSecret, walletAddress string) error {
-	return s.repo.UpdateAdminAccountConfig(accountType, apiKey, apiSecret, walletAddress)
+func (s *Service) ConfigAdminAccount(accountType, apiKey, apiSecret, walletAddress, passphrase string) error {
+	return s.repo.UpdateAdminAccountConfig(accountType, apiKey, apiSecret, walletAddress, passphrase)
 }
 
 // GetDashboardSummary Dashboard用户总览

@@ -64,10 +64,25 @@
             </form>
             <form id="okxForm" onsubmit="saveConfig(event, 'OKX')">
                 <h4>OKX</h4>
-                <div class="form-group"><label>API Key</label><input id="okx_key"></div>
-                <div class="form-group"><label>API Secret</label><input id="okx_secret"></div>
+            
+                <div class="form-group">
+                    <label>API Key</label>
+                    <input id="okx_key">
+                </div>
+            
+                <div class="form-group">
+                    <label>API Secret</label>
+                    <input id="okx_secret">
+                </div>
+            
+                <div class="form-group">
+                    <label>Passphrase</label>
+                    <input id="okx_passphrase">
+                </div>
+            
                 <button type="submit" class="btn">保存</button>
             </form>
+            
             <form id="walletForm" onsubmit="saveConfig(event, 'Wallet')">
                 <h4>Wallet</h4>
                 <div class="form-group"><label>钱包地址</label><input id="wallet_address"></div>
@@ -204,14 +219,19 @@
         function closeRechargeModal() { document.getElementById('rechargeModal').classList.remove('active'); }
         
         async function saveConfig(e, type) {
-            e.preventDefault();
-            const config = { account_type: type };
-            if (type === 'Wallet') {
-                config.wallet_address = document.getElementById('wallet_address').value;
-            } else {
-                config.api_key = document.getElementById(`${type.toLowerCase()}_key`).value;
-                config.api_secret = document.getElementById(`${type.toLowerCase()}_secret`).value;
-            }
+    e.preventDefault();
+    const config = { account_type: type };
+    if (type === 'Wallet') {
+        config.wallet_address = document.getElementById('wallet_address').value;
+    } else if (type === 'OKX') {
+        config.api_key = document.getElementById('okx_key').value;
+        config.api_secret = document.getElementById('okx_secret').value;
+        config.passphrase = document.getElementById('okx_passphrase').value;  // 新增
+    } else {
+        config.api_key = document.getElementById(`${type.toLowerCase()}_key`).value;
+        config.api_secret = document.getElementById(`${type.toLowerCase()}_secret`).value;
+    }
+
             const response = await fetch(`${API_URL}/admin/accounts/config`, {
                 method: 'POST',
                 headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
