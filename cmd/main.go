@@ -139,10 +139,15 @@ func main() {
 			// 管理员接口
 			admin := auth.Group("", h.AdminMiddleware())
 			{
+
 				// 用户管理
 				admin.POST("/admin/users", h.AdminCreateUser)
 				admin.GET("/admin/users", h.AdminGetUsers)
+				admin.GET("/admin/users/:id", h.AdminGetUserDetail)           // 新增
+				admin.PUT("/admin/users/:id/status", h.AdminToggleUserStatus) // 新增
+				admin.GET("/admin/recharge/stats", h.AdminGetRechargeStats)   // 新增
 				admin.POST("/admin/recharge", h.AdminRecharge)
+				admin.DELETE("/admin/recharge/:id", h.AdminDeleteRecharge) // 新增
 
 				// 钱包管理
 				admin.POST("/admin/accounts/config", h.AdminConfigAccount)

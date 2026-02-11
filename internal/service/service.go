@@ -159,21 +159,25 @@ func (s *Service) GetAdminAccountsStatus() ([]*model.AdminAccountStatusResponse,
 
 		if acc.AccountType == "Wallet" {
 			isConfigured = acc.WalletAddress != ""
-			// Wallet地址可以显示（不敏感）
 			if isConfigured {
-				address = acc.WalletAddress
+				address = acc.WalletAddress // 显示完整钱包地址
 			} else {
 				address = "未配置"
 			}
 		} else {
-			// API类型只显示是否已配置
+			// 对于Binance和OKX，显示API Key的前8位作为标识
 			isConfigured = acc.APIKey != "" && acc.APISecret != ""
 			if acc.AccountType == "OKX" {
 				isConfigured = isConfigured && acc.Passphrase != ""
 			}
 
 			if isConfigured {
-				address = "API已配置（密钥已加密保存）"
+				// 显示API Key的部分内容作为标识
+				if len(acc.APIKey) > 8 {
+					address = "API: " + acc.APIKey[:8] + "****"
+				} else {
+					address = "API已配置"
+				}
 			} else {
 				address = "未配置"
 			}
@@ -182,7 +186,6 @@ func (s *Service) GetAdminAccountsStatus() ([]*model.AdminAccountStatusResponse,
 		// 获取今日变化
 		dailyChange, dailyChangeRate, err := s.repo.GetTodayAdminAccountChange(acc.ID, today)
 		if err != nil {
-			fmt.Printf("⚠️  获取%s今日变化失败: %v (使用默认值0)\n", acc.AccountType, err)
 			dailyChange = 0
 			dailyChangeRate = 0
 		}
@@ -197,8 +200,6 @@ func (s *Service) GetAdminAccountsStatus() ([]*model.AdminAccountStatusResponse,
 			DailyChangeRate: dailyChangeRate,
 		}
 		result = append(result, status)
-
-		fmt.Printf("✓ %s: 余额=$%.2f, 配置=%v\n", acc.AccountType, acc.CurrentBalance, isConfigured)
 	}
 
 	return result, nil
@@ -211,7 +212,89 @@ func (s *Service) ConfigAdminAccount(accountType, apiKey, apiSecret, walletAddre
 
 // GetDashboardSummary Dashboard用户总览
 func (s *Service) GetDashboardSummary(userID int) *model.DashboardSummary {
-	return s.CalculateUserStats(userID)
+	recharges, err := s.repo.GetRechargesByUserID(userID)
+	if err != nil {
+		return &model.DashboardSummary{}
+	}
+
+	totalRecharge := 0.0
+	totalCurrentValue := 0.0
+	totalHoldDays := 0
+
+	for _, r := range recharges {
+		if !r.IsActive {
+			continue
+		}
+
+		totalRecharge += r.Amount
+
+		// 获取最新盈亏
+		latestProfit, _ := s.repo.GetLatestRechargeProfit(r.ID)
+		if latestProfit != nil {
+			// 当前价值 = 充值金额 × (1 + 盈亏率)
+			currentValue := r.Amount * (1 + latestProfit.ProfitRate/100)
+			totalCurrentValue += currentValue
+		} else {
+			totalCurrentValue += r.Amount
+		}
+
+		// 计算持有天数
+		holdDays := int(time.Since(r.RechargeAt).Hours() / 24)
+		if holdDays < 1 {
+			holdDays = 1 // 至少算1天
+		}
+		totalHoldDays += holdDays
+	}
+
+	totalProfit := totalCurrentValue - totalRecharge
+	totalProfitRate := 0.0
+	avgHoldDays := 0
+
+	activeCount := 0
+	for _, r := range recharges {
+		if r.IsActive {
+			activeCount++
+		}
+	}
+
+	if totalRecharge > 0 {
+		totalProfitRate = (totalProfit / totalRecharge) * 100
+	}
+
+	if activeCount > 0 {
+		avgHoldDays = totalHoldDays / activeCount
+	}
+
+	// 计算化率
+	monthlyRate := 0.0
+	quarterlyRate := 0.0
+	annualRate := 0.0
+
+	if avgHoldDays > 0 && totalProfitRate != 0 {
+		// 日化率
+		dailyRate := totalProfitRate / float64(avgHoldDays)
+
+		// 月化率 = 日化率 × 30
+		monthlyRate = dailyRate * 30
+
+		// 季度化率 = 日化率 × 90
+		quarterlyRate = dailyRate * 90
+
+		// 年化率 = 日化率 × 365
+		annualRate = dailyRate * 365
+	}
+
+	return &model.DashboardSummary{
+		TotalRecharge:   totalRecharge,
+		CurrentValue:    totalCurrentValue,
+		TotalProfit:     totalProfit,
+		TotalProfitRate: totalProfitRate,
+		RechargeCount:   activeCount,
+		MonthlyRate:     monthlyRate,
+		QuarterlyRate:   quarterlyRate,
+		AnnualRate:      annualRate,
+		AvgHoldDays:     avgHoldDays,
+	}
 }
 
 // GetUserRechargesWithProfit 获取用户充值及盈亏
@@ -426,4 +509,160 @@ func (s *Service) CalculateProfit(amount, baseBalance, currentBalance float64) (
 	profit = amount * profitRate / 100
 
 	return profit, profitRate
+}
+
+// ToggleUserStatus 切换用户状态
+func (s *Service) ToggleUserStatus(userID int) error {
+	user, err := s.repo.GetUserByID(userID)
+	if err != nil {
+		return err
+	}
+	if user == nil {
+		return errors.New("用户不存在")
+	}
+
+	// 切换状态
+	newStatus := !user.IsActive
+	return s.repo.UpdateUserStatus(userID, newStatus)
+}
+
+// GetUserDetail 获取用户详情（含充值记录）
+func (s *Service) GetUserDetail(userID int) (*model.UserDetailResponse, error) {
+	user, err := s.repo.GetUserByID(userID)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, errors.New("用户不存在")
+	}
+
+	// 获取充值记录
+	recharges, err := s.repo.GetRechargesByUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	var rechargeDetails []*model.RechargeDetail
+	totalRecharge := 0.0
+	totalCurrentValue := 0.0
+
+	for _, r := range recharges {
+		// 获取账户类型
+		account, _ := s.repo.GetAdminAccountByID(r.AdminAccountID)
+		accountType := ""
+		if account != nil {
+			accountType = account.AccountType
+		}
+
+		// 获取最新盈亏
+		latestProfit, _ := s.repo.GetLatestRechargeProfit(r.ID)
+		currentProfit := 0.0
+		currentRate := 0.0
+		currentValue := r.Amount
+
+		if latestProfit != nil {
+			currentProfit = latestProfit.Profit
+			currentRate = latestProfit.ProfitRate
+			currentValue = r.Amount * (1 + currentRate/100)
+		}
+
+		if r.IsActive {
+			totalRecharge += r.Amount
+			totalCurrentValue += currentValue
+		}
+
+		detail := &model.RechargeDetail{
+			ID:             r.ID,
+			Amount:         r.Amount,
+			Currency:       r.Currency,
+			AdminAccountID: r.AdminAccountID,
+			AccountType:    accountType,
+			RechargeAt:     r.RechargeAt,
+			BaseBalance:    r.BaseBalance,
+			CurrentProfit:  currentProfit,
+			CurrentRate:    currentRate,
+			IsActive:       r.IsActive,
+		}
+		rechargeDetails = append(rechargeDetails, detail)
+	}
+
+	totalProfit := totalCurrentValue - totalRecharge
+	profitRate := 0.0
+	if totalRecharge > 0 {
+		profitRate = (totalProfit / totalRecharge) * 100
+	}
+
+	return &model.UserDetailResponse{
+		UserID:        user.ID,
+		Phone:         user.Phone,
+		IsActive:      user.IsActive,
+		TotalRecharge: totalRecharge,
+		CurrentValue:  totalCurrentValue,
+		TotalProfit:   totalProfit,
+		ProfitRate:    profitRate,
+		RechargeCount: len(recharges),
+		Recharges:     rechargeDetails,
+	}, nil
+}
+
+// DeleteRecharge 删除充值记录
+func (s *Service) DeleteRecharge(rechargeID, adminUserID int) error {
+	// 验证是管理员操作
+	recharge, err := s.repo.GetRechargeByID(rechargeID)
+	if err != nil {
+		return err
+	}
+	if recharge == nil {
+		return errors.New("充值记录不存在")
+	}
+
+	return s.repo.DeleteRecharge(rechargeID)
+}
+
+// GetRechargeStatistics 获取充值统计
+func (s *Service) GetRechargeStatistics() (*model.RechargeStatistics, error) {
+	// 获取充值统计数据
+	stats, err := s.repo.GetRechargeStatistics()
+	if err != nil {
+		return nil, err
+	}
+
+	// 获取所有Admin账户
+	accounts, err := s.repo.GetAllAdminAccounts()
+	if err != nil {
+		return nil, err
+	}
+
+	accountStatistics := make(map[string]*model.AccountStats)
+	totalRecharges := 0.0
+
+	// 按账户类型汇总
+	for _, account := range accounts {
+		accountStats := &model.AccountStats{
+			AccountType: account.AccountType,
+			USDC:        0,
+			USDT:        0,
+			Total:       0,
+		}
+
+		if currencyStats, exists := stats[account.ID]; exists {
+			if usdc, ok := currencyStats["USDC"]; ok {
+				accountStats.USDC = usdc
+				accountStats.Total += usdc
+				totalRecharges += usdc
+			}
+			if usdt, ok := currencyStats["USDT"]; ok {
+				accountStats.USDT = usdt
+				accountStats.Total += usdt
+				totalRecharges += usdt
+			}
+		}
+
+		accountStatistics[account.AccountType] = accountStats
+	}
+
+	return &model.RechargeStatistics{
+		TotalRecharges:    totalRecharges,
+		AccountStatistics: accountStatistics,
+	}, nil
 }

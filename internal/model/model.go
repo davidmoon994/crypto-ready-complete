@@ -11,6 +11,7 @@ type User struct {
 	PasswordHash string    `json:"-"`
 	IsAdmin      bool      `json:"is_admin"`
 	CreatedAt    time.Time `json:"created_at"`
+	IsActive     bool      `json:"is_active"`
 }
 
 // AdminAccount Admin绑定的3个真实账户
@@ -114,6 +115,14 @@ type DashboardSummary struct {
 	TotalProfit     float64 `json:"total_profit"`
 	TotalProfitRate float64 `json:"total_profit_rate"`
 	RechargeCount   int     `json:"recharge_count"`
+
+	// 新增化率
+	MonthlyRate   float64 `json:"monthly_rate"`   // 月化率
+	QuarterlyRate float64 `json:"quarterly_rate"` // 季度化率
+	AnnualRate    float64 `json:"annual_rate"`    // 年化率
+
+	// 持有天数
+	AvgHoldDays int `json:"avg_hold_days"`
 }
 
 type RechargeWithProfit struct {
@@ -122,4 +131,45 @@ type RechargeWithProfit struct {
 	CurrentProfit float64   `json:"current_profit"`
 	CurrentRate   float64   `json:"current_rate"`
 	DaysHeld      int       `json:"days_held"`
+}
+
+// UserDetailResponse 用户详情（含充值记录）
+type UserDetailResponse struct {
+	UserID        int               `json:"user_id"`
+	Phone         string            `json:"phone"`
+	IsActive      bool              `json:"is_active"`
+	TotalRecharge float64           `json:"total_recharge"`
+	CurrentValue  float64           `json:"current_value"`
+	TotalProfit   float64           `json:"total_profit"`
+	ProfitRate    float64           `json:"profit_rate"`
+	RechargeCount int               `json:"recharge_count"`
+	Recharges     []*RechargeDetail `json:"recharges"`
+}
+
+// RechargeDetail 充值详情
+type RechargeDetail struct {
+	ID             int       `json:"id"`
+	Amount         float64   `json:"amount"`
+	Currency       string    `json:"currency"`
+	AdminAccountID int       `json:"admin_account_id"`
+	AccountType    string    `json:"account_type"`
+	RechargeAt     time.Time `json:"recharge_at"`
+	BaseBalance    float64   `json:"base_balance"`
+	CurrentProfit  float64   `json:"current_profit"`
+	CurrentRate    float64   `json:"current_rate"`
+	IsActive       bool      `json:"is_active"`
+}
+
+// RechargeStatistics 充值统计
+type RechargeStatistics struct {
+	TotalRecharges    float64                  `json:"total_recharges"`
+	AccountStatistics map[string]*AccountStats `json:"account_statistics"`
+}
+
+// AccountStats 单个账户的充值统计
+type AccountStats struct {
+	AccountType string  `json:"account_type"`
+	USDC        float64 `json:"usdc"`
+	USDT        float64 `json:"usdt"`
+	Total       float64 `json:"total"`
 }

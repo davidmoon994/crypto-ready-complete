@@ -35,17 +35,68 @@
         <h1>📊 我的仪表盘</h1>
         <div>
             <span id="userPhone"></span>
+            <span id="userStatus" style="margin: 0 15px;"></span> <!-- 新增 -->
             <button class="btn" onclick="refresh()">🔄 刷新</button>
             <button onclick="logout()">退出</button>
         </div>
     </div>
     <div class="container">
+        <!-- 原有的4个统计卡片 -->
         <div class="stats-grid">
-            <div class="stat-card"><h3>总充值</h3><div class="value" id="totalRecharge">$0</div></div>
-            <div class="stat-card"><h3>当前价值</h3><div class="value" id="currentValue">$0</div></div>
-            <div class="stat-card"><h3>总盈亏</h3><div class="value" id="totalProfit">$0</div></div>
-            <div class="stat-card"><h3>盈亏率</h3><div class="value" id="profitRate">0%</div></div>
+            <div class="stat-card">
+                <h3>总充值</h3>
+                <div class="value" id="totalRecharge">$0</div>
+            </div>
+            <div class="stat-card">
+                <h3>当前价值</h3>
+                <div class="value" id="currentValue">$0</div>
+            </div>
+            <div class="stat-card">
+                <h3>总盈亏</h3>
+                <div class="value" id="totalProfit">$0</div>
+            </div>
+            <div class="stat-card">
+                <h3>累计收益率</h3>
+                <div class="value" id="profitRate">0%</div>
+            </div>
         </div>
+    
+        <!-- 新增：年化率统计 -->
+        <div class="section" style="margin-top: 20px;">
+            <h2>📈 收益率分析</h2>
+            <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+                <div class="stat-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                    <h3 style="opacity: 0.9;">月化率</h3>
+                    <div class="value" id="monthlyRate">0%</div>
+                    <small style="opacity: 0.8; font-size: 12px;">基于平均持有天数</small>
+                </div>
+                <div class="stat-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white;">
+                    <h3 style="opacity: 0.9;">季度化率</h3>
+                    <div class="value" id="quarterlyRate">0%</div>
+                    <small style="opacity: 0.8; font-size: 12px;">90天预期收益</small>
+                </div>
+                <div class="stat-card" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white;">
+                    <h3 style="opacity: 0.9;">年化率</h3>
+                    <div class="value" id="annualRate">0%</div>
+                    <small style="opacity: 0.8; font-size: 12px;">365天预期收益</small>
+                </div>
+                <div class="stat-card">
+                    <h3>平均持有</h3>
+                    <div class="value" id="avgHoldDays">0天</div>
+                    <small style="color: #999; font-size: 12px;">所有充值的平均天数</small>
+                </div>
+            </div>
+            <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 15px; margin-top: 15px;">
+                <strong>💡 说明：</strong>
+                <ul style="margin: 10px 0 0 20px; line-height: 1.8;">
+                    <li>化率基于当前累计收益率和平均持有天数计算</li>
+                    <li>月化率 = 日化率 × 30，季度化率 = 日化率 × 90，年化率 = 日化率 × 365</li>
+                    <li>仅供参考，过往表现不代表未来收益</li>
+                </ul>
+            </div>
+        </div>
+    
+        
         <div class="section">
             <h2>我的充值记录</h2>
             <table><thead><tr><th>充值时间</th><th>金额</th><th>币种</th><th>充值到</th><th>当前盈亏</th><th>盈亏率</th><th>操作</th></tr></thead><tbody id="rechargesBody"></tbody></table>
@@ -65,31 +116,60 @@
         let authHeader = '';
         
         function checkAuth() {
-            const phone = localStorage.getItem('phone');
-            const password = localStorage.getItem('password');
-            if (!phone || !password) {
-                window.location.href = '/';
-                return false;
-            }
-            authHeader = 'Basic ' + btoa(phone + ':' + password);
-            document.getElementById('userPhone').textContent = phone;
-            return true;
-        }
+    const phone = localStorage.getItem('phone');
+    const password = localStorage.getItem('password');
+    const isActive = localStorage.getItem('isActive');
+    
+    if (!phone || !password) {
+        window.location.href = '/';
+        return false;
+    }
+    
+    authHeader = 'Basic ' + btoa(phone + ':' + password);
+    document.getElementById('userPhone').textContent = phone;
+    
+    // 显示账户状态
+    if (isActive === 'false') {
+        document.getElementById('userStatus').innerHTML = 
+            '<span style="background: #ef4444; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px;">账户已停用</span>';
+    }
+    
+    return true;
+}
         
         async function loadSummary() {
-            const response = await fetch(`${API_URL}/dashboard/summary`, { headers: { 'Authorization': authHeader } });
-            if (response.ok) {
-                const data = await response.json();
-                document.getElementById('totalRecharge').textContent = '$' + data.total_recharge.toFixed(2);
-                document.getElementById('currentValue').textContent = '$' + data.current_value.toFixed(2);
-                const profit = document.getElementById('totalProfit');
-                profit.textContent = (data.total_profit >= 0 ? '+' : '') + '$' + data.total_profit.toFixed(2);
-                profit.className = 'value ' + (data.total_profit >= 0 ? 'positive' : 'negative');
-                const rate = document.getElementById('profitRate');
-                rate.textContent = (data.total_profit_rate >= 0 ? '+' : '') + data.total_profit_rate.toFixed(2) + '%';
-                rate.className = 'value ' + (data.total_profit_rate >= 0 ? 'positive' : 'negative');
-            }
-        }
+    const response = await fetch(`${API_URL}/dashboard/summary`, { 
+        headers: { 'Authorization': authHeader } 
+    });
+    
+    if (response.ok) {
+        const data = await response.json();
+        
+        // 原有的4个卡片
+        document.getElementById('totalRecharge').textContent = '$' + data.total_recharge.toFixed(2);
+        document.getElementById('currentValue').textContent = '$' + data.current_value.toFixed(2);
+        
+        const profit = document.getElementById('totalProfit');
+        profit.textContent = (data.total_profit >= 0 ? '+' : '') + '$' + data.total_profit.toFixed(2);
+        profit.className = 'value ' + (data.total_profit >= 0 ? 'positive' : 'negative');
+        
+        const rate = document.getElementById('profitRate');
+        rate.textContent = (data.total_profit_rate >= 0 ? '+' : '') + data.total_profit_rate.toFixed(2) + '%';
+        rate.className = 'value ' + (data.total_profit_rate >= 0 ? 'positive' : 'negative');
+        
+        // 新增：化率显示
+        const monthlyRate = document.getElementById('monthlyRate');
+        monthlyRate.textContent = (data.monthly_rate >= 0 ? '+' : '') + data.monthly_rate.toFixed(2) + '%';
+        
+        const quarterlyRate = document.getElementById('quarterlyRate');
+        quarterlyRate.textContent = (data.quarterly_rate >= 0 ? '+' : '') + data.quarterly_rate.toFixed(2) + '%';
+        
+        const annualRate = document.getElementById('annualRate');
+        annualRate.textContent = (data.annual_rate >= 0 ? '+' : '') + data.annual_rate.toFixed(2) + '%';
+        
+        document.getElementById('avgHoldDays').textContent = data.avg_hold_days + '天';
+    }
+}
         
         async function loadRecharges() {
             const response = await fetch(`${API_URL}/dashboard/recharges`, { headers: { 'Authorization': authHeader } });

@@ -75,12 +75,14 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
+	// 不检查 is_active，允许停用用户登录查看历史记录
 	c.JSON(http.StatusOK, gin.H{
 		"message": "登录成功",
 		"user": gin.H{
-			"id":       user.ID,
-			"phone":    user.Phone,
-			"is_admin": user.IsAdmin,
+			"id":        user.ID,
+			"phone":     user.Phone,
+			"is_admin":  user.IsAdmin,
+			"is_active": user.IsActive, // 返回状态供前端显示
 		},
 	})
 }
@@ -250,4 +252,65 @@ func (h *Handler) DashboardManualRefresh(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "刷新完成"})
+}
+
+// AdminToggleUserStatus 启用/停用用户
+func (h *Handler) AdminToggleUserStatus(c *gin.Context) {
+	userID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "用户ID无效"})
+		return
+	}
+
+	if err := h.service.ToggleUserStatus(userID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "用户状态已更新"})
+}
+
+// AdminGetUserDetail 获取用户详情
+func (h *Handler) AdminGetUserDetail(c *gin.Context) {
+	userID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "用户ID无效"})
+		return
+	}
+
+	detail, err := h.service.GetUserDetail(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, detail)
+}
+
+// AdminDeleteRecharge 删除充值记录
+func (h *Handler) AdminDeleteRecharge(c *gin.Context) {
+	rechargeID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "充值ID无效"})
+		return
+	}
+
+	user := c.MustGet("user").(*model.User)
+	if err := h.service.DeleteRecharge(rechargeID, user.ID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "充值记录已删除"})
+}
+
+// AdminGetRechargeStats 获取充值统计
+func (h *Handler) AdminGetRechargeStats(c *gin.Context) {
+	stats, err := h.service.GetRechargeStatistics()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, stats)
 }

@@ -43,6 +43,7 @@ func (r *Repository) InitDB(adminPassword string) error {
 		phone TEXT UNIQUE NOT NULL,
 		password_hash TEXT NOT NULL,
 		is_admin BOOLEAN DEFAULT 0,
+		is_active BOOLEAN DEFAULT 1,  -- 新增
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);
 
@@ -305,6 +306,40 @@ func (r *Repository) GetLatestAdminAccountBalance(accountID int) (float64, error
 	return balance, err
 }
 
+// GetRechargeStatistics 获取充值统计（按账户和币种）
+func (r *Repository) GetRechargeStatistics() (map[int]map[string]float64, error) {
+	rows, err := r.db.Query(`
+		SELECT admin_account_id, currency, SUM(amount) as total
+		FROM recharges
+		WHERE is_active = 1
+		GROUP BY admin_account_id, currency
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	// 结构: map[accountID]map[currency]total
+	stats := make(map[int]map[string]float64)
+
+	for rows.Next() {
+		var accountID int
+		var currency string
+		var total float64
+
+		if err := rows.Scan(&accountID, &currency, &total); err != nil {
+			return nil, err
+		}
+
+		if stats[accountID] == nil {
+			stats[accountID] = make(map[string]float64)
+		}
+		stats[accountID][currency] = total
+	}
+
+	return stats, nil
+}
+
 func (r *Repository) GetAdminAccountBalanceByDate(accountID int, date string) (float64, error) {
 	var balance float64
 	err := r.db.QueryRow(
@@ -405,6 +440,61 @@ func (r *Repository) GetRechargeByID(id int) (*model.Recharge, error) {
 		return nil, nil
 	}
 	return rch, err
+}
+
+// UpdateUserStatus 更新用户状态
+func (r *Repository) UpdateUserStatus(userID int, isActive bool) error {
+	_, err := r.db.Exec(
+		"UPDATE users SET is_active = ? WHERE id = ? AND is_admin = 0",
+		isActive, userID,
+	)
+	return err
+}
+
+// GetUserByID 获取用户信息
+func (r *Repository) GetUserByID(userID int) (*model.User, error) {
+	user := &model.User{}
+	err := r.db.QueryRow(
+		"SELECT id, phone, is_admin, created_at FROM users WHERE id = ?",
+		userID,
+	).Scan(&user.ID, &user.Phone, &user.IsAdmin, &user.CreatedAt)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return user, err
+}
+
+// DeleteRecharge 删除充值记录
+func (r *Repository) DeleteRecharge(rechargeID int) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// 删除充值的每日盈亏记录
+	_, err = tx.Exec("DELETE FROM recharge_daily_profits WHERE recharge_id = ?", rechargeID)
+	if err != nil {
+		return err
+	}
+
+	// 删除充值记录
+	_, err = tx.Exec("DELETE FROM recharges WHERE id = ?", rechargeID)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+// UpdateRechargeStatus 更新充值状态（软删除）
+func (r *Repository) UpdateRechargeStatus(rechargeID int, isActive bool) error {
+	_, err := r.db.Exec(
+		"UPDATE recharges SET is_active = ? WHERE id = ?",
+		isActive, rechargeID,
+	)
+	return err
 }
 
 // RechargeDailyProfit operations
