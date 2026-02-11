@@ -146,26 +146,55 @@
         }
         
         async function loadUsers() {
-            const response = await fetch(`${API_URL}/admin/users`, { headers: { 'Authorization': authHeader } });
-            if (response.ok) {
-                const data = await response.json();
-                const tbody = document.getElementById('usersBody');
-                const select = document.getElementById('rechargeUserId');
-                const users = data || []
-                tbody.innerHTML = data.users.map(u => `
-                    <tr>
-                        <td>${u.phone}</td>
-                        <td>$${u.total_recharge.toFixed(2)}</td>
-                        <td>$${u.current_value.toFixed(2)}</td>
-                        <td style="color: ${u.total_profit >= 0 ? '#10b981' : '#ef4444'}">
-                            ${u.total_profit >= 0 ? '+' : ''}$${u.total_profit.toFixed(2)}
-                        </td>
-                        <td>${u.recharge_count}</td>
-                    </tr>
-                `).join('');
-                select.innerHTML = '<option value="">选择用户</option>' + data.users.map(u => `<option value="${u.user_id}">${u.phone}</option>`).join('');
-            }
-        }
+    const response = await fetch(`${API_URL}/admin/users`, {
+        headers: { 'Authorization': authHeader }
+    });
+
+    if (!response.ok) return;
+
+    const data = await response.json();
+
+    // 兼容三种情况：
+    // 1️⃣ 返回 { users: [...] }
+    // 2️⃣ 返回 [...]
+    // 3️⃣ 返回 null
+
+    let users = [];
+
+    if (Array.isArray(data)) {
+        users = data;
+    } else if (data && Array.isArray(data.users)) {
+        users = data.users;
+    }
+
+    const tbody = document.getElementById('usersBody');
+    const select = document.getElementById('rechargeUserId');
+
+    if (!users.length) {
+        tbody.innerHTML = `<tr><td colspan="5">暂无用户</td></tr>`;
+        select.innerHTML = '<option value="">暂无用户</option>';
+        return;
+    }
+
+    tbody.innerHTML = users.map(u => `
+        <tr>
+            <td>${u.phone}</td>
+            <td>$${(u.total_recharge || 0).toFixed(2)}</td>
+            <td>$${(u.current_value || 0).toFixed(2)}</td>
+            <td style="color: ${(u.total_profit || 0) >= 0 ? '#10b981' : '#ef4444'}">
+                ${(u.total_profit || 0) >= 0 ? '+' : ''}$${(u.total_profit || 0).toFixed(2)}
+            </td>
+            <td>${u.recharge_count || 0}</td>
+        </tr>
+    `).join('');
+
+    select.innerHTML =
+        '<option value="">选择用户</option>' +
+        users.map(u =>
+            `<option value="${u.user_id}">${u.phone}</option>`
+        ).join('');
+}
+
         
         function showConfigModal() { document.getElementById('configModal').classList.add('active'); }
         function closeConfigModal() { document.getElementById('configModal').classList.remove('active'); }
