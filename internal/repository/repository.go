@@ -7,7 +7,7 @@ import (
 	"encoding/hex"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 type Repository struct {
@@ -19,7 +19,7 @@ type Record struct {
 }
 
 func NewRepository(dbPath string, adminPassword string) (*Repository, error) {
-	db, err := sql.Open("sqlite3", dbPath)
+	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, err
 	}

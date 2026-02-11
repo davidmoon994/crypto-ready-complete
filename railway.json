@@ -1,13 +1,14 @@
 {
-    "$schema": "https://railway.app/railway.schema.json",
-    "build": {
-      "builder": "NIXPACKS",
-      "buildCommand": "go build -o crypto-final cmd/main.go"
-    },
-    "deploy": {
-      "startCommand": "./crypto-final",
-      "healthcheckPath": "/",
-      "restartPolicyType": "ON_FAILURE",
-      "restartPolicyMaxRetries": 10
-    }
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "NIXPACKS",
+    "buildCommand": "go build -o crypto-final cmd/main.go"
+  },
+  "deploy": {
+    "startCommand": "./crypto-final",
+    "healthcheckPath": "/health",
+    "healthcheckTimeout": 100,
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 10
   }
+}
