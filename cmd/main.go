@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath" // ← 添加这行
 	"syscall"
 
 	"github.com/gin-gonic/gin"
@@ -26,6 +27,15 @@ func main() {
 		dbPath = "crypto_final.db"
 	}
 
+	// 确保数据库目录存在
+	dbDir := filepath.Dir(dbPath)
+	if dbDir != "" && dbDir != "." {
+		log.Printf("📁 确保目录存在: %s", dbDir)
+		if err := os.MkdirAll(dbDir, 0755); err != nil {
+			log.Fatalf("❌ 创建数据库目录失败: %v", err)
+		}
+	}
+
 	// 获取管理员密码（必须）
 	adminPassword := os.Getenv("ADMIN_PASSWORD")
 	if adminPassword == "" {
@@ -38,12 +48,17 @@ func main() {
 		userPassword = "user123456" // 默认密码
 	}
 
+	log.Printf("✓ 数据库路径: %s", dbPath)
+	log.Printf("✓ 管理员密码已配置")
+
 	// 初始化数据库
 	repo, err := repository.NewRepository(dbPath, adminPassword)
 	if err != nil {
 		log.Fatalf("初始化数据库失败: %v", err)
 	}
 	defer repo.Close()
+
+	log.Printf("✓ 数据库初始化成功")
 
 	// 初始化服务层
 	svc := service.NewService(repo)
@@ -82,8 +97,12 @@ func main() {
 	})
 
 	// 加载HTML模板
-	r.LoadHTMLGlob("web/templates/*")
-
+	// 尝试多个可能的路径
+	templatesPath := "web/templates/*"
+	if _, err := os.Stat("web/templates"); os.IsNotExist(err) {
+		templatesPath = "/app/web/templates/*"
+	}
+	r.LoadHTMLGlob(templatesPath)
 	// 前端页面路由
 	r.GET("/", func(c *gin.Context) {
 		c.HTML(200, "index.html", nil)
@@ -95,6 +114,11 @@ func main() {
 
 	r.GET("/dashboard", func(c *gin.Context) {
 		c.HTML(200, "dashboard.html", nil)
+	})
+
+	// 添加健康检查端点
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok"})
 	})
 
 	// API路由
