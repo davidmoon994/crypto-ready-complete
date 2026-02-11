@@ -64,6 +64,7 @@ func (ws *WalletService) getBinanceBalance(account *model.AdminAccount) (float64
 	req.Header.Set("X-MBX-APIKEY", account.APIKey)
 
 	// 发送请求
+
 	resp, err := ws.httpClient.Do(req)
 	if err != nil {
 		return 0, fmt.Errorf("API请求失败: %v", err)

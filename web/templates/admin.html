@@ -55,40 +55,59 @@
     
     <div id="configModal" class="modal">
         <div class="modal-content">
-            <h3>配置钱包</h3>
-            <form id="binanceForm" onsubmit="saveConfig(event, 'Binance')">
-                <h4>Binance</h4>
-                <div class="form-group"><label>API Key</label><input id="binance_key"></div>
-                <div class="form-group"><label>API Secret</label><input id="binance_secret"></div>
-                <button type="submit" class="btn">保存</button>
-            </form>
-            <form id="okxForm" onsubmit="saveConfig(event, 'OKX')">
-                <h4>OKX</h4>
+            <h3>⚙️ 钱包配置</h3>
+            <p style="color: #666; margin-bottom: 20px; font-size: 14px;">
+                ℹ️ 配置一次后将永久保存，除非手动修改。API密钥已加密存储。
+            </p>
             
+            <form id="binanceForm" onsubmit="saveConfig(event, 'Binance')">
+                <h4>🅱️ Binance</h4>
                 <div class="form-group">
                     <label>API Key</label>
-                    <input id="okx_key">
+                    <input id="binance_key" type="password" placeholder="输入Binance API Key">
+                    <small style="color: #999;">首次配置或需要修改时填写</small>
                 </div>
-            
                 <div class="form-group">
                     <label>API Secret</label>
-                    <input id="okx_secret">
+                    <input id="binance_secret" type="password" placeholder="输入Binance API Secret">
                 </div>
+                <button type="submit" class="btn">💾 保存Binance配置</button>
+            </form>
+            <hr style="margin: 20px 0;">
             
+            <form id="okxForm" onsubmit="saveConfig(event, 'OKX')">
+                <h4>🅾️ OKX</h4>
+                <div class="form-group">
+                    <label>API Key</label>
+                    <input id="okx_key" type="password" placeholder="输入OKX API Key">
+                </div>
+                <div class="form-group">
+                    <label>API Secret</label>
+                    <input id="okx_secret" type="password" placeholder="输入OKX API Secret">
+                </div>
                 <div class="form-group">
                     <label>Passphrase</label>
-                    <input id="okx_passphrase">
+                    <input id="okx_passphrase" type="password" placeholder="输入OKX Passphrase">
                 </div>
-            
-                <button type="submit" class="btn">保存</button>
+                <button type="submit" class="btn">💾 保存OKX配置</button>
             </form>
+            <hr style="margin: 20px 0;">
             
             <form id="walletForm" onsubmit="saveConfig(event, 'Wallet')">
-                <h4>Wallet</h4>
-                <div class="form-group"><label>钱包地址</label><input id="wallet_address"></div>
-                <button type="submit" class="btn">保存</button>
+                <h4>⛓️ 区块链钱包</h4>
+                <div class="form-group">
+                    <label>钱包地址</label>
+                    <input id="wallet_address" placeholder="输入以太坊钱包地址 (0x...)">
+                </div>
+                <div class="form-group">
+                    <label>Etherscan API Key</label>
+                    <input id="wallet_secret" type="password" placeholder="输入Etherscan API Key">
+                    <small style="color: #999;">免费申请：https://etherscan.io/apis</small>
+                </div>
+                <button type="submit" class="btn">💾 保存钱包配置</button>
             </form>
-            <button class="btn" onclick="closeConfigModal()">关闭</button>
+            
+            <button class="btn" onclick="closeConfigModal()" style="margin-top: 20px; background: #999;">关闭</button>
         </div>
     </div>
     
@@ -144,23 +163,55 @@
             return true;
         }
         
-        async function loadWallets() {
-            const response = await fetch(`${API_URL}/admin/accounts/status`, { headers: { 'Authorization': authHeader } });
-            if (response.ok) {
-                const data = await response.json();
-                const grid = document.getElementById('walletGrid');
-                grid.innerHTML = data.accounts.map(a => `
-                    <div class="wallet-card ${a.is_configured ? 'active' : ''}">
-                        <h3>${a.account_type}</h3>
-                        <div>地址: ${a.address || '未配置'}</div>
-                        <div class="wallet-balance">$${a.current_balance.toFixed(2)}</div>
-                        <div>变化: ${a.daily_change >= 0 ? '+' : ''}$${a.daily_change.toFixed(2)} (${a.daily_change_rate >= 0 ? '+' : ''}${a.daily_change_rate.toFixed(2)}%)</div>
-                    </div>
-                `).join('');
-            }
-        }
+ async function loadWallets() {
+    try {
+        const response = await fetch(`${API_URL}/admin/accounts/status`, { 
+            headers: { 'Authorization': authHeader } 
+        });
         
-        async function loadUsers() {
+        if (response.ok) {
+            const data = await response.json();
+            console.log('钱包数据：', data);
+            
+            const grid = document.getElementById('walletGrid');
+            if (!data.accounts || data.accounts.length === 0) {
+                grid.innerHTML = '<div style="padding: 40px; text-align: center; color: #999;">暂无钱包数据</div>';
+                return;
+            }
+            
+            grid.innerHTML = data.accounts.map(a => `
+                <div class="wallet-card ${a.is_configured ? 'active' : ''}">
+                    <h3>${a.account_type}</h3>
+                    <div style="font-size: 14px; color: #666; margin: 5px 0;">
+                        ${a.address || '未配置'}
+                    </div>
+                    <div class="wallet-balance">$${a.current_balance.toFixed(2)}</div>
+                    <div style="font-size: 13px; color: ${a.daily_change >= 0 ? '#10b981' : '#ef4444'};">
+                        变化: ${a.daily_change >= 0 ? '+' : ''}$${a.daily_change.toFixed(2)} 
+                        (${a.daily_change_rate >= 0 ? '+' : ''}${a.daily_change_rate.toFixed(2)}%)
+                    </div>
+                    <div style="font-size: 12px; margin-top: 10px; color: ${a.is_configured ? '#10b981' : '#999'};">
+                        ${a.is_configured ? '✓ 已配置' : '⚠ 未配置'}
+                    </div>
+                    ${a.is_configured ? `
+                        <button class="btn" style="margin-top: 10px; font-size: 12px; padding: 5px 10px;" 
+                                onclick="editConfig('${a.account_type}')">修改配置</button>
+                    ` : ''}
+                </div>
+            `).join('');
+        } else {
+            console.error('获取钱包状态失败，状态码：', response.status);
+            const error = await response.json();
+            console.error('错误详情：', error);
+        }
+    } catch (error) {
+        console.error('加载钱包失败：', error);
+        document.getElementById('walletGrid').innerHTML = 
+            '<div style="padding: 40px; text-align: center; color: #ef4444;">加载失败，请检查网络连接</div>';
+    }
+}
+        
+async function loadUsers() {
     const response = await fetch(`${API_URL}/admin/users`, {
         headers: { 'Authorization': authHeader }
     });
@@ -218,31 +269,103 @@
         function showRechargeModal() { document.getElementById('rechargeModal').classList.add('active'); }
         function closeRechargeModal() { document.getElementById('rechargeModal').classList.remove('active'); }
         
-        async function saveConfig(e, type) {
+async function saveConfig(e, type) {
     e.preventDefault();
     const config = { account_type: type };
+    
     if (type === 'Wallet') {
         config.wallet_address = document.getElementById('wallet_address').value;
+        config.api_secret = document.getElementById('wallet_secret').value; // Etherscan API Key
     } else if (type === 'OKX') {
         config.api_key = document.getElementById('okx_key').value;
         config.api_secret = document.getElementById('okx_secret').value;
-        config.passphrase = document.getElementById('okx_passphrase').value;  // 新增
+        config.passphrase = document.getElementById('okx_passphrase').value;
     } else {
         config.api_key = document.getElementById(`${type.toLowerCase()}_key`).value;
         config.api_secret = document.getElementById(`${type.toLowerCase()}_secret`).value;
     }
-
-            const response = await fetch(`${API_URL}/admin/accounts/config`, {
-                method: 'POST',
-                headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
-                body: JSON.stringify(config)
-            });
-            if (response.ok) {
-                alert('配置保存成功！');
-                loadWallets();
+    
+    try {
+        const response = await fetch(`${API_URL}/admin/accounts/config`, {
+            method: 'POST',
+            headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+            body: JSON.stringify(config)
+        });
+        
+        if (response.ok) {
+            alert(`✅ ${type} 配置保存成功！配置已永久保存。`);
+            
+            // 清空输入框
+            if (type === 'Binance') {
+                document.getElementById('binance_key').value = '';
+                document.getElementById('binance_secret').value = '';
+            } else if (type === 'OKX') {
+                document.getElementById('okx_key').value = '';
+                document.getElementById('okx_secret').value = '';
+                document.getElementById('okx_passphrase').value = '';
+            } else if (type === 'Wallet') {
+                document.getElementById('wallet_secret').value = '';
+            }
+            
+            // 触发余额检查
+            try {
+                await fetch(`${API_URL}/admin/manual-check`, {
+                    method: 'POST',
+                    headers: { 'Authorization': authHeader }
+                });
+            } catch (err) {
+                console.log('余额检查失败：', err);
+            }
+            
+            // 刷新钱包显示
+            await loadWallets();
+            
+            console.log(`${type} 配置完成，数据已刷新`);
+        } else {
+            const error = await response.json();
+            alert('❌ 配置失败：' + (error.error || '未知错误'));
+            console.error('配置失败：', error);
+        }
+    } catch (error) {
+        console.error('配置错误：', error);
+        alert('❌ 网络错误：' + error.message);
+    }
+}        
+// 编辑配置（自动填充已有值）
+async function editConfig(accountType) {
+    try {
+        // 获取当前配置
+        const response = await fetch(`${API_URL}/admin/accounts/status`, {
+            headers: { 'Authorization': authHeader }
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            const account = data.accounts.find(a => a.account_type === accountType);
+            
+            if (account && account.is_configured) {
+                // 显示配置模态框
+                showConfigModal();
+                
+                // 不自动填充敏感信息，只提示已配置
+                if (accountType === 'Binance') {
+                    document.getElementById('binance_key').placeholder = '已配置（如需修改请重新输入）';
+                    document.getElementById('binance_secret').placeholder = '已配置（如需修改请重新输入）';
+                } else if (accountType === 'OKX') {
+                    document.getElementById('okx_key').placeholder = '已配置（如需修改请重新输入）';
+                    document.getElementById('okx_secret').placeholder = '已配置（如需修改请重新输入）';
+                    document.getElementById('okx_passphrase').placeholder = '已配置（如需修改请重新输入）';
+                } else if (accountType === 'Wallet') {
+                    // Wallet地址可以显示
+                    document.getElementById('wallet_address').value = account.address || '';
+                }
             }
         }
-        
+    } catch (error) {
+        console.error('加载配置失败：', error);
+    }
+}
+
         document.getElementById('createUserForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const response = await fetch(`${API_URL}/admin/users`, {

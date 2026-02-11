@@ -139,31 +139,53 @@ func (s *Service) GetAllDashboardUsersWithStats() ([]*model.DashboardUserListIte
 func (s *Service) GetAdminAccountsStatus() ([]*model.AdminAccountStatusResponse, error) {
 	accounts, err := s.repo.GetAllAdminAccounts()
 	if err != nil {
-		return nil, err
+		fmt.Printf("❌ GetAllAdminAccounts error: %v\n", err)
+		return nil, fmt.Errorf("获取Admin账户失败: %v", err)
+	}
+
+	if len(accounts) == 0 {
+		fmt.Println("⚠️  没有找到Admin账户")
+		return []*model.AdminAccountStatusResponse{}, nil
 	}
 
 	today := time.Now().Format("2006-01-02")
 	var result []*model.AdminAccountStatusResponse
 
 	for _, acc := range accounts {
+		fmt.Printf("处理账户: %s (ID: %d)\n", acc.AccountType, acc.ID)
+
 		isConfigured := false
 		address := ""
 
 		if acc.AccountType == "Wallet" {
-			if acc.WalletAddress != "" {
+			isConfigured = acc.WalletAddress != ""
+			// Wallet地址可以显示（不敏感）
+			if isConfigured {
 				address = acc.WalletAddress
+			} else {
+				address = "未配置"
+			}
+		} else {
+			// API类型只显示是否已配置
+			isConfigured = acc.APIKey != "" && acc.APISecret != ""
+			if acc.AccountType == "OKX" {
+				isConfigured = isConfigured && acc.Passphrase != ""
 			}
 
-		} else {
-			isConfigured = acc.APIKey != ""
-
 			if isConfigured {
-				address = "API已配置"
+				address = "API已配置（密钥已加密保存）"
+			} else {
+				address = "未配置"
 			}
 		}
 
 		// 获取今日变化
-		dailyChange, dailyChangeRate, _ := s.repo.GetTodayAdminAccountChange(acc.ID, today)
+		dailyChange, dailyChangeRate, err := s.repo.GetTodayAdminAccountChange(acc.ID, today)
+		if err != nil {
+			fmt.Printf("⚠️  获取%s今日变化失败: %v (使用默认值0)\n", acc.AccountType, err)
+			dailyChange = 0
+			dailyChangeRate = 0
+		}
 
 		status := &model.AdminAccountStatusResponse{
 			ID:              acc.ID,
@@ -175,6 +197,8 @@ func (s *Service) GetAdminAccountsStatus() ([]*model.AdminAccountStatusResponse,
 			DailyChangeRate: dailyChangeRate,
 		}
 		result = append(result, status)
+
+		fmt.Printf("✓ %s: 余额=$%.2f, 配置=%v\n", acc.AccountType, acc.CurrentBalance, isConfigured)
 	}
 
 	return result, nil
