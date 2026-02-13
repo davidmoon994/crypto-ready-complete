@@ -356,6 +356,69 @@
                 max-height: 85vh;
             }
         }
+        /* 表格响应式优化 */
+.table-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin: 0 -15px; /* 负边距让表格可以滚动到边缘 */
+    padding: 0 15px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 600px;
+}
+
+/* 手机端隐藏次要列 */
+@media (max-width: 768px) {
+    .hide-mobile {
+        display: none;
+    }
+    
+    table {
+        min-width: 100%;
+        font-size: 12px;
+    }
+    
+    th, td {
+        padding: 8px 4px;
+        font-size: 12px;
+    }
+    
+    /* 手机端显示卡片式布局 */
+    .mobile-card {
+        display: block;
+        background: white;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 10px;
+    }
+    
+    .mobile-card-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 8px 0;
+        border-bottom: 1px solid #f0f0f0;
+    }
+    
+    .mobile-card-row:last-child {
+        border-bottom: none;
+    }
+    
+    .mobile-card-label {
+        color: #666;
+        font-weight: 600;
+        font-size: 12px;
+    }
+    
+    .mobile-card-value {
+        color: #333;
+        font-size: 13px;
+        font-weight: 500;
+    }
+}
     </style>
 </head>
 <body>
@@ -376,26 +439,29 @@
             </div>
             
             <div class="section">
-
-            <h2>👥 用户管理</h2>
-            <button class="btn" onclick="showCreateUserModal()">+ 创建用户</button>
-            <button class="btn btn-success" onclick="showRechargeModal()">💰 充值</button>
-            <table>
-                <thead>
-                    <tr>
-                        <th>手机号</th>
-                        <th>总充值</th>
-                        <th>当前价值</th>
-                        <th>盈亏</th>
-                        <th>笔数</th>
-                        <th>状态</th>
-                        <th>操作</th>
-                    </tr>
-                </thead>
-                <tbody id="usersBody"></tbody>
-            </table>
-        </div>
-    </div>
+                <h2>👥 用户管理</h2>
+                <div style="margin-bottom: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button class="btn" onclick="showCreateUserModal()">➕ 创建用户</button>
+                    <button class="btn" onclick="showRechargeModal()">💰 充值</button>
+                </div>
+                
+                <div class="table-container">
+                    <table id="usersTable">
+                        <thead>
+                            <tr>
+                                <th>手机号</th>
+                                <th class="hide-mobile">总充值</th>
+                                <th class="hide-mobile">当前价值</th>
+                                <th>盈亏</th>
+                                <th class="hide-mobile">笔数</th>
+                                <th class="hide-mobile">状态</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersBody"></tbody>
+                    </table>
+                </div>
+            </div>
     
     <div id="configModal" class="modal">
         <div class="modal-content">
@@ -612,33 +678,92 @@ async function loadUsers() {
         const tbody = document.getElementById('usersBody');
         const select = document.getElementById('rechargeUserId');
         
-        tbody.innerHTML = data.users.map(u => `
-            <tr>
-                <td>${u.phone}</td>
-                <td>$${u.total_recharge.toFixed(2)}</td>
-                <td>$${u.current_value.toFixed(2)}</td>
-                <td style="color: ${u.total_profit >= 0 ? '#10b981' : '#ef4444'}">
-                    ${u.total_profit >= 0 ? '+' : ''}$${u.total_profit.toFixed(2)}
-                </td>
-                <td>${u.recharge_count}</td>
-                <td>
-                    <span class="badge ${u.is_active ? 'active' : 'inactive'}">
-                        ${u.is_active ? '活跃' : '已停用'}
-                    </span>
-                </td>
-                <td>
-                    <button class="btn" onclick="viewUserDetail(${u.user_id})" style="font-size: 12px; padding: 5px 10px;">查看</button>
-                    <button class="btn" onclick="toggleUserStatus(${u.user_id})" style="font-size: 12px; padding: 5px 10px; background: ${u.is_active ? '#ef4444' : '#10b981'};">
-                        ${u.is_active ? '停用' : '启用'}
-                    </button>
-                </td>
-            </tr>
-        `).join('');
+        // 检测是否为移动设备
+        const isMobile = window.innerWidth <= 768;
+        
+        if (isMobile) {
+            // 移动端：卡片式布局
+            tbody.innerHTML = data.users.map(u => `
+                <tr>
+                    <td colspan="7">
+                        <div class="mobile-card">
+                            <div class="mobile-card-row">
+                                <span class="mobile-card-label">手机号</span>
+                                <span class="mobile-card-value">${u.phone}</span>
+                            </div>
+                            <div class="mobile-card-row">
+                                <span class="mobile-card-label">总充值</span>
+                                <span class="mobile-card-value">$${u.total_recharge.toFixed(2)}</span>
+                            </div>
+                            <div class="mobile-card-row">
+                                <span class="mobile-card-label">当前价值</span>
+                                <span class="mobile-card-value">$${u.current_value.toFixed(2)}</span>
+                            </div>
+                            <div class="mobile-card-row">
+                                <span class="mobile-card-label">盈亏</span>
+                                <span class="mobile-card-value" style="color: ${u.total_profit >= 0 ? '#10b981' : '#ef4444'}">
+                                    ${u.total_profit >= 0 ? '+' : ''}$${u.total_profit.toFixed(2)}
+                                </span>
+                            </div>
+                            <div class="mobile-card-row">
+                                <span class="mobile-card-label">笔数</span>
+                                <span class="mobile-card-value">${u.recharge_count}</span>
+                            </div>
+                            <div class="mobile-card-row">
+                                <span class="mobile-card-label">状态</span>
+                                <span class="badge ${u.is_active ? 'active' : 'inactive'}">
+                                    ${u.is_active ? '活跃' : '已停用'}
+                                </span>
+                            </div>
+                            <div class="mobile-card-row">
+                                <button class="btn" onclick="viewUserDetail(${u.user_id})" style="font-size: 12px; padding: 5px 10px; width: 48%; margin-right: 2%;">查看</button>
+                                <button class="btn" onclick="toggleUserStatus(${u.user_id})" style="font-size: 12px; padding: 5px 10px; width: 48%; background: ${u.is_active ? '#ef4444' : '#10b981'};">
+                                    ${u.is_active ? '停用' : '启用'}
+                                </button>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+        } else {
+            // 桌面端：表格布局
+            tbody.innerHTML = data.users.map(u => `
+                <tr>
+                    <td>${u.phone}</td>
+                    <td>$${u.total_recharge.toFixed(2)}</td>
+                    <td>$${u.current_value.toFixed(2)}</td>
+                    <td style="color: ${u.total_profit >= 0 ? '#10b981' : '#ef4444'}">
+                        ${u.total_profit >= 0 ? '+' : ''}$${u.total_profit.toFixed(2)}
+                    </td>
+                    <td>${u.recharge_count}</td>
+                    <td>
+                        <span class="badge ${u.is_active ? 'active' : 'inactive'}">
+                            ${u.is_active ? '活跃' : '已停用'}
+                        </span>
+                    </td>
+                    <td>
+                        <button class="btn" onclick="viewUserDetail(${u.user_id})" style="font-size: 12px; padding: 5px 10px;">查看</button>
+                        <button class="btn" onclick="toggleUserStatus(${u.user_id})" style="font-size: 12px; padding: 5px 10px; background: ${u.is_active ? '#ef4444' : '#10b981'};">
+                            ${u.is_active ? '停用' : '启用'}
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
         
         select.innerHTML = '<option value="">选择用户</option>' + 
             data.users.filter(u => u.is_active).map(u => `<option value="${u.user_id}">${u.phone}</option>`).join('');
     }
 }
+
+// 监听窗口大小变化，重新加载
+let resizeTimer;
+window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+        loadUsers();
+    }, 250);
+});
 
         
         function showConfigModal() { document.getElementById('configModal').classList.add('active'); }
@@ -889,14 +1014,23 @@ async function editConfig(accountType) {
         if (response.ok) {
             const data = await response.json();
             displayRechargeStats(data);
+        } else {
+            console.error('加载充值统计失败：', response.status);
         }
     } catch (error) {
         console.error('加载充值统计失败：', error);
+        // 不显示错误给用户，静默失败
     }
 }
 
 function displayRechargeStats(data) {
     const container = document.getElementById('rechargeStats');
+    
+    // 添加安全检查
+    if (!container) {
+        console.error('rechargeStats 元素不存在');
+        return;
+    }
     
     // 总充值卡片
     let html = `

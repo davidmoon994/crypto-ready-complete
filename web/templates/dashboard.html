@@ -325,7 +325,45 @@
                 font-size: 12px;
             }
         }
+    /* 充值记录表格响应式 */
+@media (max-width: 768px) {
+    .hide-mobile {
+        display: none;
+    }
     
+    .recharge-card {
+        display: block;
+        background: white;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 10px;
+    }
+    
+    .recharge-card-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 8px 0;
+        border-bottom: 1px solid #f0f0f0;
+    }
+    
+    .recharge-card-row:last-child {
+        border-bottom: none;
+    }
+    
+    .recharge-card-label {
+        color: #666;
+        font-weight: 600;
+        font-size: 12px;
+    }
+    
+    .recharge-card-value {
+        color: #333;
+        font-size: 13px;
+        font-weight: 500;
+        text-align: right;
+    }
+}
         /* 横屏手机优化 */
         @media (max-width: 900px) and (orientation: landscape) {
             .modal-content {
@@ -408,20 +446,46 @@
         </div>
     
         
-        <div class="section">
-            <h2>我的充值记录</h2>
-            <table><thead><tr><th>充值时间</th><th>金额</th><th>币种</th><th>充值到</th><th>当前盈亏</th><th>盈亏率</th><th>操作</th></tr></thead><tbody id="rechargesBody"></tbody></table>
-        </div>
+       <!-- 充值记录部分 ← 修改这里 -->
+<div class="section">
+    <h2>我的充值记录</h2>
+    <div class="table-container">  <!-- 新增这个div -->
+        <table>
+            <thead>
+                <tr>
+                    <th>充值时间</th>
+                    <th class="hide-mobile">金额</th>  <!-- 添加class -->
+                    <th class="hide-mobile">币种</th>  <!-- 添加class -->
+                    <th class="hide-mobile">充值到</th>  <!-- 添加class -->
+                    <th>当前盈亏</th>
+                    <th class="hide-mobile">盈亏率</th>  <!-- 添加class -->
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="rechargesBody"></tbody>
+        </table>
+    </div>  <!-- 新增的div结束 -->
+</div>
+
+<!-- 历史记录模态框 ← 不要动这部分 -->
+<div id="historyModal" class="modal">
+    <div class="modal-content">
+        <h3 id="historyTitle">充值历史</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>日期</th>
+                    <th>账户余额</th>
+                    <th>盈亏金额</th>
+                    <th>盈亏率</th>
+                </tr>
+            </thead>
+            <tbody id="historyBody"></tbody>
+        </table>
+        <button class="btn" onclick="closeHistoryModal()">关闭</button>
     </div>
-    
-    <div id="historyModal" class="modal">
-        <div class="modal-content">
-            <h3 id="historyTitle">充值历史</h3>
-            <table><thead><tr><th>日期</th><th>账户余额</th><th>盈亏金额</th><th>盈亏率</th></tr></thead><tbody id="historyBody"></tbody></table>
-            <button class="btn" onclick="closeHistoryModal()">关闭</button>
-        </div>
-    </div>
-    
+</div>
+
     <script>
         const API_URL = window.location.origin + '/api';
         let authHeader = '';
@@ -482,33 +546,73 @@
     }
 }
         
-        async function loadRecharges() {
-            const response = await fetch(`${API_URL}/dashboard/recharges`, { headers: { 'Authorization': authHeader } });
-            if (response.ok) {
-                const data = await response.json();
-                const tbody = document.getElementById('rechargesBody');
-                if (!data.recharges || data.recharges.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 40px; color: #999;">暂无充值记录</td></tr>';
-                    return;
-                }
-                tbody.innerHTML = data.recharges.map(r => `
-                    <tr>
-                        <td>${new Date(r.recharge.recharge_at).toLocaleDateString('zh-CN')}</td>
-                        <td>$${r.recharge.amount.toFixed(2)}</td>
-                        <td>${r.recharge.currency}</td>
-                        <td><strong>${r.account_type}</strong></td>
-                        <td style="color: ${r.current_profit >= 0 ? '#10b981' : '#ef4444'}">
-                            ${r.current_profit >= 0 ? '+' : ''}$${r.current_profit.toFixed(2)}
-                        </td>
-                        <td style="color: ${r.current_rate >= 0 ? '#10b981' : '#ef4444'}">
-                            ${r.current_rate >= 0 ? '+' : ''}${r.current_rate.toFixed(2)}%
-                        </td>
-                        <td><button class="btn" onclick="viewHistory(${r.recharge.id}, '${r.account_type}', ${r.recharge.amount})">查看历史</button></td>
-                    </tr>
-                `).join('');
-            }
-        }
+async function loadRecharges() {
+    const response = await fetch(`${API_URL}/dashboard/recharges`, { 
+        headers: { 'Authorization': authHeader } 
+    });
+    
+    if (response.ok) {
+        const data = await response.json();
+        const tbody = document.getElementById('rechargesBody');
+        const isMobile = window.innerWidth <= 768;
         
+        if (isMobile) {
+            // 移动端卡片布局
+            tbody.innerHTML = data.recharges.map(r => `
+                <tr>
+                    <td colspan="7">
+                        <div class="recharge-card">
+                            <div class="recharge-card-row">
+                                <span class="recharge-card-label">时间</span>
+                                <span class="recharge-card-value">${new Date(r.recharge_at).toLocaleDateString('zh-CN')}</span>
+                            </div>
+                            <div class="recharge-card-row">
+                                <span class="recharge-card-label">金额</span>
+                                <span class="recharge-card-value">$${r.amount.toFixed(2)} ${r.currency}</span>
+                            </div>
+                            <div class="recharge-card-row">
+                                <span class="recharge-card-label">充值到</span>
+                                <span class="recharge-card-value">${r.account_type}</span>
+                            </div>
+                            <div class="recharge-card-row">
+                                <span class="recharge-card-label">当前盈亏</span>
+                                <span class="recharge-card-value" style="color: ${r.current_profit >= 0 ? '#10b981' : '#ef4444'}">
+                                    ${r.current_profit >= 0 ? '+' : ''}$${r.current_profit.toFixed(2)}
+                                </span>
+                            </div>
+                            <div class="recharge-card-row">
+                                <span class="recharge-card-label">盈亏率</span>
+                                <span class="recharge-card-value" style="color: ${r.current_rate >= 0 ? '#10b981' : '#ef4444'}">
+                                    ${r.current_rate >= 0 ? '+' : ''}${r.current_rate.toFixed(2)}%
+                                </span>
+                            </div>
+                            <div class="recharge-card-row">
+                                <button class="btn" onclick="viewHistory(${r.id})" style="width: 100%; font-size: 13px;">查看历史</button>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+        } else {
+            // 桌面端表格布局
+            tbody.innerHTML = data.recharges.map(r => `
+                <tr>
+                    <td>${new Date(r.recharge_at).toLocaleDateString('zh-CN')}</td>
+                    <td>$${r.amount.toFixed(2)}</td>
+                    <td>${r.currency}</td>
+                    <td>${r.account_type}</td>
+                    <td style="color: ${r.current_profit >= 0 ? '#10b981' : '#ef4444'}">
+                        ${r.current_profit >= 0 ? '+' : ''}$${r.current_profit.toFixed(2)}
+                    </td>
+                    <td style="color: ${r.current_rate >= 0 ? '#10b981' : '#ef4444'}">
+                        ${r.current_rate >= 0 ? '+' : ''}${r.current_rate.toFixed(2)}%
+                    </td>
+                    <td><button class="btn" onclick="viewHistory(${r.id})">查看历史</button></td>
+                </tr>
+            `).join('');
+        }
+    }
+}
         async function viewHistory(rechargeId, accountType, amount) {
             document.getElementById('historyTitle').textContent = `充值历史 - ${accountType} $${amount}`;
             document.getElementById('historyModal').classList.add('active');
