@@ -685,13 +685,33 @@ table {
 }
         
 async function loadUsers() {
-    const response = await fetch(`${API_URL}/admin/users`, { 
-        headers: { 'Authorization': authHeader } 
-    });
-    if (response.ok) {
+    const tbody = document.getElementById('usersBody');
+    const select = document.getElementById('rechargeUserId');
+    
+    // 安全检查
+    if (!tbody) {
+        console.error('usersBody 元素不存在');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_URL}/admin/users`, { 
+            headers: { 'Authorization': authHeader } 
+        });
+        
+        if (!response.ok) {
+            console.error('获取用户列表失败，状态码：', response.status);
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #ef4444;">加载失败</td></tr>';
+            return;
+        }
+        
         const data = await response.json();
-        const tbody = document.getElementById('usersBody');
-        const select = document.getElementById('rechargeUserId');
+        
+        if (!data.users || data.users.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #999;">暂无用户数据</td></tr>';
+            if (select) select.innerHTML = '<option value="">选择用户</option>';
+            return;
+        }
         
         // 检测是否为移动设备
         const isMobile = window.innerWidth <= 768;
@@ -766,8 +786,14 @@ async function loadUsers() {
             `).join('');
         }
         
-        select.innerHTML = '<option value="">选择用户</option>' + 
-            data.users.filter(u => u.is_active).map(u => `<option value="${u.user_id}">${u.phone}</option>`).join('');
+        // 更新下拉选择框
+        if (select) {
+            select.innerHTML = '<option value="">选择用户</option>' + 
+                data.users.filter(u => u.is_active).map(u => `<option value="${u.user_id}">${u.phone}</option>`).join('');
+        }
+    } catch (error) {
+        console.error('加载用户失败：', error);
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #ef4444;">加载失败：' + error.message + '</td></tr>';
     }
 }
 
