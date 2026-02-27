@@ -155,6 +155,7 @@ func main() {
 
 				// 系统管理
 				admin.POST("/admin/manual-check", h.AdminManualCheck)
+				admin.GET("/admin/recharge/stats", h.AdminGetRechargeStats)
 			}
 		}
 	}

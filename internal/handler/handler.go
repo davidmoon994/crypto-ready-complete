@@ -120,6 +120,23 @@ func (h *Handler) AdminGetUsers(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"users": users})
 }
 
+// AdminGetUserDetail 获取用户详情
+func (h *Handler) AdminGetUserDetail(c *gin.Context) {
+	userID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "用户ID无效"})
+		return
+	}
+
+	detail, err := h.service.GetUserDetail(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, detail)
+}
+
 // AdminRecharge 管理员充值
 func (h *Handler) AdminRecharge(c *gin.Context) {
 	var req model.AdminRechargeRequest
@@ -286,57 +303,6 @@ func (h *Handler) DashboardManualRefresh(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "刷新完成"})
-}
-
-// AdminToggleUserStatus 启用/停用用户
-func (h *Handler) AdminToggleUserStatus(c *gin.Context) {
-	userID, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "用户ID无效"})
-		return
-	}
-
-	// 获取当前用户状态
-	user, err := h.service.GetUserDetail(userID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	// 切换状态
-	newStatus := !user.IsActive
-	if err := h.service.UpdateUserStatus(userID, newStatus); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	statusText := "已停用"
-	if newStatus {
-		statusText = "已启用"
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message":   "用户状态已更新",
-		"is_active": newStatus,
-		"status":    statusText,
-	})
-}
-
-// AdminGetUserDetail 获取用户详情
-func (h *Handler) AdminGetUserDetail(c *gin.Context) {
-	userID, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "用户ID无效"})
-		return
-	}
-
-	detail, err := h.service.GetUserDetail(userID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, detail)
 }
 
 // AdminDeleteRecharge 删除充值记录
