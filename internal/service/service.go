@@ -71,41 +71,83 @@ func (s *Service) AdminCreateUser(phone string) (int64, error) {
 }
 
 // AdminRecharge 管理员为用户充值
-func (s *Service) AdminRecharge(userID, adminAccountID int, amount float64, currency string) error {
-	// 获取Admin账户当前余额作为基准
-	account, err := s.repo.GetAdminAccountByID(adminAccountID)
+func (s *Service) AdminRecharge(userID int, adminAccountID int, amount float64, currency string) error {
+	if amount <= 0 {
+		return errors.New("充值金额必须大于0")
+	}
+
+	// 验证用户存在
+	user, err := s.repo.GetUserByID(userID)
 	if err != nil {
 		return err
 	}
-	if account == nil {
+	if user == nil {
+		return errors.New("用户不存在")
+	}
+
+	// 验证Admin账户存在
+	adminAccount, err := s.repo.GetAdminAccountByID(adminAccountID)
+	if err != nil {
+		return err
+	}
+	if adminAccount == nil {
 		return errors.New("Admin账户不存在")
 	}
 
-	baseBalance := account.CurrentBalance
-	if baseBalance == 0 {
-		// 如果还没有余额记录，先获取一次
-		balance, err := s.walletService.GetBalance(account)
-		if err == nil {
-			baseBalance = balance
-			s.repo.UpdateAdminAccountBalance(adminAccountID, balance)
-		} else {
-			return fmt.Errorf("无法获取账户余额: %v", err)
-		}
+	// 获取当前账户状态
+	currentBalance := adminAccount.CurrentBalance
+	currentShares := adminAccount.TotalShares
+
+	fmt.Printf("\n💰 充值操作:\n")
+	fmt.Printf("  用户: %s\n", user.Phone)
+	fmt.Printf("  充值金额: $%.2f %s\n", amount, currency)
+	fmt.Printf("  充值到: %s\n", adminAccount.AccountType)
+	fmt.Printf("  充值前余额: $%.2f\n", currentBalance)
+	fmt.Printf("  充值前总份额: %.4f\n", currentShares)
+
+	// 计算份额
+	var purchasedShares float64
+	var netValue float64
+
+	if currentShares == 0 || currentBalance == 0 {
+		// 第一笔充值：初始化净值为1
+		purchasedShares = amount
+		netValue = 1.0
+		fmt.Printf("  首次充值，净值初始化为: $1.00\n")
+	} else {
+		// 后续充值：根据当前净值计算份额
+		netValue = currentBalance / currentShares
+		purchasedShares = amount / netValue
+		fmt.Printf("  当前净值: $%.4f\n", netValue)
+	}
+
+	fmt.Printf("  购买份额: %.4f\n", purchasedShares)
+
+	// 更新Admin账户的总份额
+	newTotalShares := currentShares + purchasedShares
+	if err := s.repo.UpdateAdminAccountShares(adminAccountID, newTotalShares); err != nil {
+		return fmt.Errorf("更新账户份额失败: %v", err)
 	}
 
 	// 创建充值记录
-	recharge := &model.Recharge{
-		UserID:         userID,
-		AdminAccountID: adminAccountID,
-		Amount:         amount,
-		Currency:       currency,
-		RechargeAt:     time.Now(),
-		BaseBalance:    baseBalance, // 记录基准余额
-		IsActive:       true,
+	rechargeID, err := s.repo.CreateRechargeWithShares(
+		userID,
+		adminAccountID,
+		amount,
+		currency,
+		currentBalance, // base_balance: 充值时的账户余额
+		purchasedShares,
+	)
+	if err != nil {
+		// 回滚份额更新
+		s.repo.UpdateAdminAccountShares(adminAccountID, currentShares)
+		return fmt.Errorf("创建充值记录失败: %v", err)
 	}
 
-	_, err = s.repo.CreateRecharge(recharge)
-	return err
+	fmt.Printf("✓ 充值记录已创建 (ID: %d)\n", rechargeID)
+	fmt.Printf("✓ 新总份额: %.4f\n", newTotalShares)
+
+	return nil
 }
 
 // GetAllDashboardUsersWithStats 获取所有Dashboard用户及统计
@@ -208,6 +250,11 @@ func (s *Service) GetAdminAccountsStatus() ([]*model.AdminAccountStatusResponse,
 // ConfigAdminAccount 配置Admin账户
 func (s *Service) ConfigAdminAccount(accountType, apiKey, apiSecret, walletAddress, passphrase string) error {
 	return s.repo.UpdateAdminAccountConfig(accountType, apiKey, apiSecret, walletAddress, passphrase)
+}
+
+// UpdateUserStatus 更新用户状态
+func (s *Service) UpdateUserStatus(userID int, isActive bool) error {
+	return s.repo.UpdateUserStatus(userID, isActive)
 }
 
 // GetDashboardSummary Dashboard用户总览
@@ -461,40 +508,72 @@ func (s *Service) UpdateDailyBalances() error {
 		return err
 	}
 
-	fmt.Printf("\n开始计算 %d 笔充值的盈亏...\n", len(recharges))
-	for _, recharge := range recharges {
-		// 获取Admin账户今天的余额
-		currentBalance, err := s.repo.GetAdminAccountBalanceByDate(recharge.AdminAccountID, today)
-		if err != nil || currentBalance == 0 {
-			// 如果没有今天的记录，使用当前余额
-			account, _ := s.repo.GetAdminAccountByID(recharge.AdminAccountID)
-			if account != nil {
-				currentBalance = account.CurrentBalance
-			}
-		}
+	// 2. 计算每笔充值的盈亏（基于份额）
+fmt.Println("\n开始计算充值盈亏...")
 
-		if currentBalance == 0 {
-			continue
-		}
-
-		// 计算盈亏
-		profit, profitRate := s.CalculateProfit(recharge.Amount, recharge.BaseBalance, currentBalance)
-
-		// 保存
-		err = s.repo.SaveRechargeDailyProfit(recharge.ID, today, currentBalance, profit, profitRate)
-		if err != nil {
-			fmt.Printf("❌ 充值ID %d 盈亏保存失败: %v\n", recharge.ID, err)
-			continue
-		}
-
-		successCount++
-	}
-
-	fmt.Printf("✓ 成功计算充值盈亏\n")
-	fmt.Printf("========== 每日余额检查完成 ==========\n\n")
-
-	return nil
+allRecharges, err := s.repo.GetAllActiveRecharges()
+if err != nil {
+    fmt.Printf("❌ 获取充值记录失败: %v\n", err)
+    return
 }
+
+fmt.Printf("开始计算%d笔充值的盈亏...\n", len(allRecharges))
+
+for _, recharge := range allRecharges {
+    // 获取Admin账户当前状态
+    adminAccount, err := s.repo.GetAdminAccountByID(recharge.AdminAccountID)
+    if err != nil || adminAccount == nil {
+        fmt.Printf("⚠️  充值ID %d: 无法获取Admin账户\n", recharge.ID)
+        continue
+    }
+
+    currentBalance := adminAccount.CurrentBalance
+    totalShares := adminAccount.TotalShares
+
+    // 核心算法：基于份额计算
+    var currentValue float64
+    var profit float64
+    var profitRate float64
+
+    if totalShares > 0 && recharge.Shares > 0 {
+        // 当前净值 = 账户余额 / 总份额
+        netValue := currentBalance / totalShares
+        
+        // 用户当前价值 = 持有份额 × 净值
+        currentValue = recharge.Shares * netValue
+        
+        // 盈亏 = 当前价值 - 本金
+        profit = currentValue - recharge.Amount
+        
+        // 盈亏率
+        if recharge.Amount > 0 {
+            profitRate = (profit / recharge.Amount) * 100
+        }
+
+        fmt.Printf("  充值ID %d: 本金=$%.2f, 份额=%.4f, 净值=$%.4f, 当前=$%.2f, 盈亏=%s$%.2f (%.2f%%)\n",
+            recharge.ID,
+            recharge.Amount,
+            recharge.Shares,
+            netValue,
+            currentValue,
+            formatSign(profit), abs(profit),
+            profitRate)
+    } else {
+        // 异常情况
+        currentValue = recharge.Amount
+        profit = 0
+        profitRate = 0
+        fmt.Printf("⚠️  充值ID %d: 份额数据异常\n", recharge.ID)
+    }
+
+    // 保存盈亏记录
+    err = s.repo.SaveRechargeDailyProfit(recharge.ID, today, currentBalance, profit, profitRate)
+    if err != nil {
+        fmt.Printf("⚠️  充值ID %d: 保存盈亏失败: %v\n", recharge.ID, err)
+    }
+}
+
+fmt.Println("✓ 成功计算充值盈亏")
 
 // CalculateProfit 计算盈亏
 func (s *Service) CalculateProfit(amount, baseBalance, currentBalance float64) (profit, profitRate float64) {
@@ -525,6 +604,48 @@ func (s *Service) ToggleUserStatus(userID int) error {
 	newStatus := !user.IsActive
 	return s.repo.UpdateUserStatus(userID, newStatus)
 }
+
+func (s *Service) GetDashboardRecharges(userID int) ([]*model.RechargeResponse, error) {
+	recharges, err := s.repo.GetRechargesByUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	var result []*model.RechargeResponse
+	for _, r := range recharges {
+		// 获取账户类型
+		account, _ := s.repo.GetAdminAccountByID(r.AdminAccountID)
+		accountType := "未知"
+		if account != nil {
+			accountType = account.AccountType
+		}
+
+		// 获取最新盈亏
+		latestProfit, _ := s.repo.GetLatestRechargeProfit(r.ID)
+		
+		currentProfit := 0.0
+		currentRate := 0.0
+		
+		if latestProfit != nil {
+			currentProfit = latestProfit.Profit
+			currentRate = latestProfit.ProfitRate
+		}
+
+		response := &model.RechargeResponse{
+			ID:            r.ID,
+			Amount:        r.Amount,
+			Currency:      r.Currency,
+			AccountType:   accountType,
+			RechargeAt:    r.RechargeAt,
+			CurrentProfit: currentProfit,
+			CurrentRate:   currentRate,
+		}
+		result = append(result, response)
+	}
+
+	return result, nil
+}
+
 
 // GetUserDetail 获取用户详情（含充值记录）
 func (s *Service) GetUserDetail(userID int) (*model.UserDetailResponse, error) {

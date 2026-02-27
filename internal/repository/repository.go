@@ -55,6 +55,7 @@ func (r *Repository) InitDB(adminPassword string) error {
 		wallet_address TEXT,
 		passphrase TEXT,           -- ← 新增
 		current_balance REAL DEFAULT 0,
+		total_shares REAL DEFAULT 0,  -- 新增：总份额数
 		is_active BOOLEAN DEFAULT 1,
 		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);
@@ -79,6 +80,7 @@ func (r *Repository) InitDB(adminPassword string) error {
 		currency TEXT NOT NULL,
 		recharge_at TIMESTAMP NOT NULL,
 		base_balance REAL NOT NULL,
+		shares REAL NOT NULL DEFAULT 0,  -- 新增：用户持有的份额数
 		is_active BOOLEAN DEFAULT 1,
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		FOREIGN KEY (user_id) REFERENCES users(id),
@@ -177,14 +179,16 @@ func (r *Repository) GetAllDashboardUsers() ([]*model.User, error) {
 // AdminAccount operations
 func (r *Repository) GetAdminAccountByID(id int) (*model.AdminAccount, error) {
 	acc := &model.AdminAccount{}
-	var apiKey, apiSecret, walletAddress, passphrase sql.NullString // ← 添加 passphrase
+	var apiKey, apiSecret, walletAddress, passphrase sql.NullString
 
 	err := r.db.QueryRow(
-		`SELECT id, account_type, api_key, api_secret, wallet_address, passphrase, current_balance, is_active, updated_at
+		`SELECT id, account_type, api_key, api_secret, wallet_address, passphrase, 
+		        current_balance, COALESCE(total_shares, 0), is_active, updated_at
 		 FROM admin_accounts WHERE id = ?`,
 		id,
 	).Scan(&acc.ID, &acc.AccountType, &apiKey, &apiSecret,
-		&walletAddress, &passphrase, &acc.CurrentBalance, &acc.IsActive, &acc.UpdatedAt)
+		&walletAddress, &passphrase, &acc.CurrentBalance, &acc.TotalShares,
+		&acc.IsActive, &acc.UpdatedAt)
 
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -197,21 +201,22 @@ func (r *Repository) GetAdminAccountByID(id int) (*model.AdminAccount, error) {
 	acc.APIKey = apiKey.String
 	acc.APISecret = apiSecret.String
 	acc.WalletAddress = walletAddress.String
-	acc.Passphrase = passphrase.String // ← 新增
+	acc.Passphrase = passphrase.String
 
 	return acc, nil
 }
-
 func (r *Repository) GetAdminAccountByType(accountType string) (*model.AdminAccount, error) {
 	acc := &model.AdminAccount{}
-	var apiKey, apiSecret, walletAddress, passphrase sql.NullString // ← 添加 passphrase
+	var apiKey, apiSecret, walletAddress, passphrase sql.NullString
 
 	err := r.db.QueryRow(
-		`SELECT id, account_type, api_key, api_secret, wallet_address, passphrase, current_balance, is_active, updated_at
+		`SELECT id, account_type, api_key, api_secret, wallet_address, passphrase, 
+		        current_balance, COALESCE(total_shares, 0), is_active, updated_at
 		 FROM admin_accounts WHERE account_type = ?`,
 		accountType,
 	).Scan(&acc.ID, &acc.AccountType, &apiKey, &apiSecret,
-		&walletAddress, &passphrase, &acc.CurrentBalance, &acc.IsActive, &acc.UpdatedAt)
+		&walletAddress, &passphrase, &acc.CurrentBalance, &acc.TotalShares,
+		&acc.IsActive, &acc.UpdatedAt)
 
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -224,14 +229,15 @@ func (r *Repository) GetAdminAccountByType(accountType string) (*model.AdminAcco
 	acc.APIKey = apiKey.String
 	acc.APISecret = apiSecret.String
 	acc.WalletAddress = walletAddress.String
-	acc.Passphrase = passphrase.String // ← 新增
+	acc.Passphrase = passphrase.String
 
 	return acc, nil
 }
 
 func (r *Repository) GetAllAdminAccounts() ([]*model.AdminAccount, error) {
 	rows, err := r.db.Query(
-		`SELECT id, account_type, api_key, api_secret, wallet_address, passphrase, current_balance, is_active, updated_at
+		`SELECT id, account_type, api_key, api_secret, wallet_address, passphrase, 
+		        current_balance, COALESCE(total_shares, 0), is_active, updated_at
 		 FROM admin_accounts ORDER BY id`,
 	)
 	if err != nil {
@@ -242,10 +248,11 @@ func (r *Repository) GetAllAdminAccounts() ([]*model.AdminAccount, error) {
 	var accounts []*model.AdminAccount
 	for rows.Next() {
 		acc := &model.AdminAccount{}
-		var apiKey, apiSecret, walletAddress, passphrase sql.NullString // ← 添加 passphrase
+		var apiKey, apiSecret, walletAddress, passphrase sql.NullString
 
 		err := rows.Scan(&acc.ID, &acc.AccountType, &apiKey, &apiSecret,
-			&walletAddress, &passphrase, &acc.CurrentBalance, &acc.IsActive, &acc.UpdatedAt)
+			&walletAddress, &passphrase, &acc.CurrentBalance, &acc.TotalShares,
+			&acc.IsActive, &acc.UpdatedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -254,7 +261,7 @@ func (r *Repository) GetAllAdminAccounts() ([]*model.AdminAccount, error) {
 		acc.APIKey = apiKey.String
 		acc.APISecret = apiSecret.String
 		acc.WalletAddress = walletAddress.String
-		acc.Passphrase = passphrase.String // ← 新增
+		acc.Passphrase = passphrase.String
 
 		accounts = append(accounts, acc)
 	}
@@ -405,10 +412,13 @@ func (r *Repository) GetRechargesByUserID(userID int) ([]*model.Recharge, error)
 }
 
 func (r *Repository) GetAllActiveRecharges() ([]*model.Recharge, error) {
-	rows, err := r.db.Query(
-		`SELECT id, user_id, admin_account_id, amount, currency, recharge_at, base_balance, is_active, created_at
-		 FROM recharges WHERE is_active=1`,
-	)
+	rows, err := r.db.Query(`
+		SELECT id, user_id, admin_account_id, amount, currency, 
+		       COALESCE(base_balance, 0), COALESCE(shares, 0), recharge_at, is_active
+		FROM recharges
+		WHERE is_active = 1
+		ORDER BY recharge_at ASC
+	`)
 	if err != nil {
 		return nil, err
 	}
@@ -417,13 +427,23 @@ func (r *Repository) GetAllActiveRecharges() ([]*model.Recharge, error) {
 	var recharges []*model.Recharge
 	for rows.Next() {
 		r := &model.Recharge{}
-		err := rows.Scan(&r.ID, &r.UserID, &r.AdminAccountID, &r.Amount, &r.Currency,
-			&r.RechargeAt, &r.BaseBalance, &r.IsActive, &r.CreatedAt)
+		err := rows.Scan(
+			&r.ID,
+			&r.UserID,
+			&r.AdminAccountID,
+			&r.Amount,
+			&r.Currency,
+			&r.BaseBalance,
+			&r.Shares,
+			&r.RechargeAt,
+			&r.IsActive,
+		)
 		if err != nil {
 			return nil, err
 		}
 		recharges = append(recharges, r)
 	}
+
 	return recharges, nil
 }
 
@@ -551,4 +571,26 @@ func (r *Repository) GetRechargeProfitHistory(rechargeID int) ([]*model.Recharge
 
 func (r *Repository) Close() error {
 	return r.db.Close()
+}
+
+// UpdateAdminAccountShares 更新Admin账户总份额
+func (r *Repository) UpdateAdminAccountShares(accountID int, totalShares float64) error {
+	_, err := r.db.Exec(
+		"UPDATE admin_accounts SET total_shares = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+		totalShares, accountID,
+	)
+	return err
+}
+
+// CreateRechargeWithShares 创建充值记录（含份额）
+func (r *Repository) CreateRechargeWithShares(userID, adminAccountID int, amount float64, currency string, baseBalance, shares float64) (int64, error) {
+	result, err := r.db.Exec(
+		`INSERT INTO recharges (user_id, admin_account_id, amount, currency, base_balance, shares, recharge_at, is_active)
+         VALUES (?, ?, ?, ?, ?, ?, datetime('now'), 1)`,
+		userID, adminAccountID, amount, currency, baseBalance, shares,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
 }

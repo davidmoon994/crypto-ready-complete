@@ -23,6 +23,7 @@ type AdminAccount struct {
 	WalletAddress  string    `json:"wallet_address,omitempty"`
 	Passphrase     string    `json:"passphrase,omitempty"` // ← 新增
 	CurrentBalance float64   `json:"current_balance"`
+	TotalShares    float64   `json:"total_shares"` // 新增
 	IsActive       bool      `json:"is_active"`
 	UpdatedAt      time.Time `json:"updated_at"`
 }
@@ -47,6 +48,7 @@ type Recharge struct {
 	Currency       string    `json:"currency"`
 	RechargeAt     time.Time `json:"recharge_at"`
 	BaseBalance    float64   `json:"base_balance"` // 充值时Admin账户的余额（基准）
+	Shares         float64   `json:"shares"`       // 新增
 	IsActive       bool      `json:"is_active"`
 	CreatedAt      time.Time `json:"created_at"`
 }
@@ -172,4 +174,24 @@ type AccountStats struct {
 	USDC        float64 `json:"usdc"`
 	USDT        float64 `json:"usdt"`
 	Total       float64 `json:"total"`
+}
+
+type RechargeResponse struct {
+	ID            int       `json:"id"`
+	Amount        float64   `json:"amount"`
+	Currency      string    `json:"currency"`
+	AccountType   string    `json:"account_type"`
+	RechargeAt    time.Time `json:"recharge_at"`
+	CurrentProfit float64   `json:"current_profit"`
+	CurrentRate   float64   `json:"current_rate"`
+}
+
+type UserSummary struct {
+	UserID        int     `json:"user_id"`
+	Phone         string  `json:"phone"`
+	IsActive      bool    `json:"is_active"` // 确保有这个字段
+	TotalRecharge float64 `json:"total_recharge"`
+	CurrentValue  float64 `json:"current_value"`
+	TotalProfit   float64 `json:"total_profit"`
+	RechargeCount int     `json:"recharge_count"`
 }

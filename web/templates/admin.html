@@ -688,7 +688,6 @@ async function loadUsers() {
     const tbody = document.getElementById('usersBody');
     const select = document.getElementById('rechargeUserId');
     
-    // 安全检查
     if (!tbody) {
         console.error('usersBody 元素不存在');
         return;
@@ -713,11 +712,10 @@ async function loadUsers() {
             return;
         }
         
-        // 检测是否为移动设备
         const isMobile = window.innerWidth <= 768;
         
         if (isMobile) {
-            // 移动端：卡片式布局
+            // 移动端卡片布局
             tbody.innerHTML = data.users.map(u => `
                 <tr>
                     <td colspan="7">
@@ -747,12 +745,12 @@ async function loadUsers() {
                             <div class="mobile-card-row">
                                 <span class="mobile-card-label">状态</span>
                                 <span class="badge ${u.is_active ? 'active' : 'inactive'}">
-                                    ${u.is_active ? '活跃' : '已停用'}
+                                    ${u.is_active ? '✓ 已启用' : '✗ 已停用'}
                                 </span>
                             </div>
-                            <div class="mobile-card-row">
-                                <button class="btn" onclick="viewUserDetail(${u.user_id})" style="font-size: 12px; padding: 5px 10px; width: 48%; margin-right: 2%;">查看</button>
-                                <button class="btn" onclick="toggleUserStatus(${u.user_id})" style="font-size: 12px; padding: 5px 10px; width: 48%; background: ${u.is_active ? '#ef4444' : '#10b981'};">
+                            <div class="mobile-card-row" style="gap: 5px;">
+                                <button class="btn" onclick="viewUserDetail(${u.user_id})" style="font-size: 12px; padding: 5px 10px; width: 32%;">查看</button>
+                                <button class="btn" onclick="toggleUserStatus(${u.user_id})" style="font-size: 12px; padding: 5px 10px; width: 32%; background: ${u.is_active ? '#ef4444' : '#10b981'};">
                                     ${u.is_active ? '停用' : '启用'}
                                 </button>
                             </div>
@@ -761,9 +759,9 @@ async function loadUsers() {
                 </tr>
             `).join('');
         } else {
-            // 桌面端：表格布局
+            // 桌面端表格布局
             tbody.innerHTML = data.users.map(u => `
-                <tr>
+                <tr style="${u.is_active ? '' : 'opacity: 0.6; background: #f9f9f9;'}">
                     <td>${u.phone}</td>
                     <td>$${u.total_recharge.toFixed(2)}</td>
                     <td>$${u.current_value.toFixed(2)}</td>
@@ -773,11 +771,11 @@ async function loadUsers() {
                     <td>${u.recharge_count}</td>
                     <td>
                         <span class="badge ${u.is_active ? 'active' : 'inactive'}">
-                            ${u.is_active ? '活跃' : '已停用'}
+                            ${u.is_active ? '✓ 已启用' : '✗ 已停用'}
                         </span>
                     </td>
-                    <td>
-                        <button class="btn" onclick="viewUserDetail(${u.user_id})" style="font-size: 12px; padding: 5px 10px;">查看</button>
+                    <td style="white-space: nowrap;">
+                        <button class="btn" onclick="viewUserDetail(${u.user_id})" style="font-size: 12px; padding: 5px 10px; margin-right: 5px;">查看</button>
                         <button class="btn" onclick="toggleUserStatus(${u.user_id})" style="font-size: 12px; padding: 5px 10px; background: ${u.is_active ? '#ef4444' : '#10b981'};">
                             ${u.is_active ? '停用' : '启用'}
                         </button>
@@ -786,7 +784,7 @@ async function loadUsers() {
             `).join('');
         }
         
-        // 更新下拉选择框
+        // 更新下拉选择框（只显示已启用的用户）
         if (select) {
             select.innerHTML = '<option value="">选择用户</option>' + 
                 data.users.filter(u => u.is_active).map(u => `<option value="${u.user_id}">${u.phone}</option>`).join('');
@@ -826,19 +824,50 @@ async function viewUserDetail(userId) {
     }
 }
 
-// 切换用户状态
+// 切换用户状态（启用/停用）
 async function toggleUserStatus(userId) {
-    if (!confirm('确认要切换用户状态吗？')) return;
+    const user = await getUserInfo(userId);
+    if (!user) return;
     
-    const response = await fetch(`${API_URL}/admin/users/${userId}/status`, {
-        method: 'PUT',
-        headers: { 'Authorization': authHeader }
-    });
+    const action = user.is_active ? '停用' : '启用';
+    const message = user.is_active 
+        ? `确认要停用用户 ${user.phone} 吗？停用后该用户将无法登录Dashboard，但历史记录会保留。`
+        : `确认要启用用户 ${user.phone} 吗？启用后该用户可以正常登录Dashboard。`;
     
-    if (response.ok) {
-        alert('用户状态已更新');
-        loadUsers();
+    if (!confirm(message)) return;
+    
+    try {
+        const response = await fetch(`${API_URL}/admin/users/${userId}/status`, {
+            method: 'PUT',
+            headers: { 'Authorization': authHeader }
+        });
+        
+        if (response.ok) {
+            alert(`✓ 用户已${action}`);
+            loadUsers(); // 刷新用户列表
+        } else {
+            const error = await response.json();
+            alert(`❌ ${action}失败: ${error.error || '未知错误'}`);
+        }
+    } catch (error) {
+        console.error(`${action}用户失败:`, error);
+        alert(`❌ 网络错误: ${error.message}`);
     }
+}
+
+// 获取用户信息（辅助函数）
+async function getUserInfo(userId) {
+    try {
+        const response = await fetch(`${API_URL}/admin/users/${userId}`, {
+            headers: { 'Authorization': authHeader }
+        });
+        if (response.ok) {
+            return await response.json();
+        }
+    } catch (error) {
+        console.error('获取用户信息失败:', error);
+    }
+    return null;
 }
 
 // 删除充值记录
@@ -897,6 +926,53 @@ function showUserDetailModal(data) {
 function closeUserDetailModal() {
     document.getElementById('userDetailModal').classList.remove('active');
 }  
+
+// 切换用户状态（启用/停用）
+async function toggleUserStatus(userId) {
+    const user = await getUserInfo(userId);
+    if (!user) return;
+    
+    const action = user.is_active ? '停用' : '启用';
+    const message = user.is_active 
+        ? `确认要停用用户 ${user.phone} 吗？停用后该用户将无法登录Dashboard，但历史记录会保留。`
+        : `确认要启用用户 ${user.phone} 吗？启用后该用户可以正常登录Dashboard。`;
+    
+    if (!confirm(message)) return;
+    
+    try {
+        const response = await fetch(`${API_URL}/admin/users/${userId}/status`, {
+            method: 'PUT',
+            headers: { 'Authorization': authHeader }
+        });
+        
+        if (response.ok) {
+            alert(`✓ 用户已${action}`);
+            loadUsers(); // 刷新用户列表
+        } else {
+            const error = await response.json();
+            alert(`❌ ${action}失败: ${error.error || '未知错误'}`);
+        }
+    } catch (error) {
+        console.error(`${action}用户失败:`, error);
+        alert(`❌ 网络错误: ${error.message}`);
+    }
+}
+
+// 获取用户信息（辅助函数）
+async function getUserInfo(userId) {
+    try {
+        const response = await fetch(`${API_URL}/admin/users/${userId}`, {
+            headers: { 'Authorization': authHeader }
+        });
+        if (response.ok) {
+            return await response.json();
+        }
+    } catch (error) {
+        console.error('获取用户信息失败:', error);
+    }
+    return null;
+}
+
 
 async function saveConfig(e, type) {
     e.preventDefault();

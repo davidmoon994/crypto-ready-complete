@@ -47,41 +47,34 @@ func (ws *WalletService) getBinanceBalance(account *model.AdminAccount) (float64
 		return 0, fmt.Errorf("未配置Binance API Key")
 	}
 
-	// API参数
-	timestamp := fmt.Sprintf("%d", time.Now().UnixMilli())
-	queryString := "timestamp=" + timestamp
-
-	// 生成签名
+	timestamp := fmt.Sprintf("%d", time.Now().UnixNano()/1000000)
+	queryString := fmt.Sprintf("timestamp=%s", timestamp)
 	signature := ws.binanceSign(queryString, account.APISecret)
+
 	url := "https://api.binance.com/api/v3/account?" + queryString + "&signature=" + signature
 
-	// 创建请求
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return 0, fmt.Errorf("创建请求失败: %v", err)
+		return 0, err
 	}
 
 	req.Header.Set("X-MBX-APIKEY", account.APIKey)
 
-	// 发送请求
-
 	resp, err := ws.httpClient.Do(req)
 	if err != nil {
-		return 0, fmt.Errorf("API请求失败: %v", err)
+		return 0, err
 	}
 	defer resp.Body.Close()
 
-	// 读取响应
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return 0, fmt.Errorf("读取响应失败: %v", err)
+		return 0, err
 	}
 
 	if resp.StatusCode != 200 {
 		return 0, fmt.Errorf("API返回错误 [%d]: %s", resp.StatusCode, string(body))
 	}
 
-	// 解析响应
 	var result struct {
 		Balances []struct {
 			Asset  string `json:"asset"`
@@ -91,19 +84,21 @@ func (ws *WalletService) getBinanceBalance(account *model.AdminAccount) (float64
 	}
 
 	if err := json.Unmarshal(body, &result); err != nil {
-		return 0, fmt.Errorf("解析响应失败: %v", err)
+		return 0, err
 	}
 
-	// 计算USDC + USDT总余额
 	totalBalance := 0.0
 	for _, balance := range result.Balances {
 		if balance.Asset == "USDC" || balance.Asset == "USDT" {
 			free, _ := strconv.ParseFloat(balance.Free, 64)
 			locked, _ := strconv.ParseFloat(balance.Locked, 64)
-			assetBalance := free + locked
-			totalBalance += assetBalance
-			fmt.Printf("  Binance %s: %.2f (可用: %.2f, 锁定: %.2f)\n",
-				balance.Asset, assetBalance, free, locked)
+			assetTotal := free + locked
+
+			if assetTotal > 0 {
+				totalBalance += assetTotal
+				fmt.Printf("  Binance %s: %.2f (可用: %.2f, 锁定: %.2f)\n",
+					balance.Asset, assetTotal, free, locked)
+			}
 		}
 	}
 
@@ -125,79 +120,80 @@ func (ws *WalletService) getOKXBalance(account *model.AdminAccount) (float64, er
 		return 0, fmt.Errorf("未配置OKX API Key")
 	}
 
-	// API参数
-	timestamp := time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
-	method := "GET"
-	requestPath := "/api/v5/account/balance"
-
-	// 生成签名
-	preHash := timestamp + method + requestPath
-	signature := ws.okxSign(preHash, account.APISecret)
-
-	url := "https://www.okx.com" + requestPath
-
-	// 创建请求
-	req, err := http.NewRequest(method, url, nil)
-	if err != nil {
-		return 0, fmt.Errorf("创建请求失败: %v", err)
-	}
-
-	// 设置请求头
-	req.Header.Set("OK-ACCESS-KEY", account.APIKey)
-	req.Header.Set("OK-ACCESS-SIGN", signature)
-	req.Header.Set("OK-ACCESS-TIMESTAMP", timestamp)
 	passphrase := account.Passphrase
 	if passphrase == "" {
 		return 0, fmt.Errorf("未配置OKX Passphrase")
 	}
+
+	timestamp := time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
+	method := "GET"
+	requestPath := "/api/v5/account/balance"
+	body := ""
+
+	message := timestamp + method + requestPath + body
+	signature := ws.okxSign(message, account.APISecret)
+
+	url := "https://www.okx.com" + requestPath
+
+	req, err := http.NewRequest(method, url, nil)
+	if err != nil {
+		return 0, err
+	}
+
+	req.Header.Set("OK-ACCESS-KEY", account.APIKey)
+	req.Header.Set("OK-ACCESS-SIGN", signature)
+	req.Header.Set("OK-ACCESS-TIMESTAMP", timestamp)
 	req.Header.Set("OK-ACCESS-PASSPHRASE", passphrase)
 	req.Header.Set("Content-Type", "application/json")
 
-	// 发送请求
 	resp, err := ws.httpClient.Do(req)
 	if err != nil {
-		return 0, fmt.Errorf("API请求失败: %v", err)
+		return 0, err
 	}
 	defer resp.Body.Close()
 
-	// 读取响应
-	body, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return 0, fmt.Errorf("读取响应失败: %v", err)
+		return 0, err
 	}
 
 	if resp.StatusCode != 200 {
-		return 0, fmt.Errorf("API返回错误 [%d]: %s", resp.StatusCode, string(body))
+		return 0, fmt.Errorf("API返回错误 [%d]: %s", resp.StatusCode, string(respBody))
 	}
 
-	// 解析响应
 	var result struct {
 		Code string `json:"code"`
 		Msg  string `json:"msg"`
 		Data []struct {
 			Details []struct {
-				Ccy     string `json:"ccy"`
-				CashBal string `json:"cashBal"`
+				Ccy       string `json:"ccy"`
+				CashBal   string `json:"cashBal"`   // 现金余额（可用）
+				FrozenBal string `json:"frozenBal"` // 冻结余额
 			} `json:"details"`
 		} `json:"data"`
 	}
 
-	if err := json.Unmarshal(body, &result); err != nil {
-		return 0, fmt.Errorf("解析响应失败: %v", err)
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return 0, err
 	}
 
 	if result.Code != "0" {
-		return 0, fmt.Errorf("OKX API错误: %s", result.Msg)
+		return 0, fmt.Errorf("API返回错误 [%s]: %s", result.Code, result.Msg)
 	}
 
-	// 计算USDC + USDT总余额
 	totalBalance := 0.0
 	if len(result.Data) > 0 {
 		for _, detail := range result.Data[0].Details {
 			if detail.Ccy == "USDC" || detail.Ccy == "USDT" {
-				balance, _ := strconv.ParseFloat(detail.CashBal, 64)
-				totalBalance += balance
-				fmt.Printf("  OKX %s: %.2f\n", detail.Ccy, balance)
+				cashBal, _ := strconv.ParseFloat(detail.CashBal, 64)
+				frozenBal, _ := strconv.ParseFloat(detail.FrozenBal, 64)
+				assetTotal := cashBal + frozenBal
+
+				if assetTotal > 0 {
+					totalBalance += assetTotal
+					fmt.Printf("  OKX %s: %.2f (可用: %.2f, 冻结: %.2f)\n",
+						detail.Ccy, assetTotal, cashBal, frozenBal)
+				}
 			}
 		}
 	}
