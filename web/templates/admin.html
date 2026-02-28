@@ -826,31 +826,42 @@ async function viewUserDetail(userId) {
 
 // 切换用户状态（启用/停用）
 async function toggleUserStatus(userId) {
-    const user = await getUserInfo(userId);
-    if (!user) return;
-    
-    const action = user.is_active ? '停用' : '启用';
-    const message = user.is_active 
-        ? `确认要停用用户 ${user.phone} 吗？停用后该用户将无法登录Dashboard，但历史记录会保留。`
-        : `确认要启用用户 ${user.phone} 吗？启用后该用户可以正常登录Dashboard。`;
-    
-    if (!confirm(message)) return;
-    
     try {
-        const response = await fetch(`${API_URL}/admin/users/${userId}/status`, {
+        // 先获取当前状态
+        const response = await fetch(`${API_URL}/admin/users/${userId}`, {
+            headers: { 'Authorization': authHeader }
+        });
+        
+        if (!response.ok) {
+            alert('❌ 获取用户信息失败');
+            return;
+        }
+        
+        const userData = await response.json();
+        const currentStatus = userData.is_active;
+        const action = currentStatus ? '停用' : '启用';
+        
+        const message = currentStatus 
+            ? `确认要停用用户 ${userData.phone} 吗？停用后该用户将无法登录Dashboard，但历史记录会保留。`
+            : `确认要启用用户 ${userData.phone} 吗？启用后该用户可以正常登录Dashboard。`;
+        
+        if (!confirm(message)) return;
+        
+        // 切换状态
+        const toggleResponse = await fetch(`${API_URL}/admin/users/${userId}/status`, {
             method: 'PUT',
             headers: { 'Authorization': authHeader }
         });
         
-        if (response.ok) {
+        if (toggleResponse.ok) {
             alert(`✓ 用户已${action}`);
             loadUsers(); // 刷新用户列表
         } else {
-            const error = await response.json();
+            const error = await toggleResponse.json();
             alert(`❌ ${action}失败: ${error.error || '未知错误'}`);
         }
     } catch (error) {
-        console.error(`${action}用户失败:`, error);
+        console.error('切换用户状态失败:', error);
         alert(`❌ 网络错误: ${error.message}`);
     }
 }

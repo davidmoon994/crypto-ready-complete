@@ -155,6 +155,61 @@ func (r *Repository) GetUserByPhone(phone string) (*model.User, error) {
 	return user, err
 }
 
+func (r *Repository) GetAllUsers() ([]*model.UserSummary, error) {
+	rows, err := r.db.Query(`
+		SELECT 
+			u.id,
+			u.phone,
+			u.is_active,
+			COALESCE(SUM(CASE WHEN r.is_active = 1 THEN r.amount ELSE 0 END), 0) as total_recharge,
+			COUNT(CASE WHEN r.is_active = 1 THEN r.id END) as recharge_count
+		FROM users u
+		LEFT JOIN recharges r ON u.id = r.user_id
+		WHERE u.is_admin = 0
+		GROUP BY u.id, u.phone, u.is_active
+		ORDER BY u.id DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []*model.UserSummary
+	for rows.Next() {
+		user := &model.UserSummary{}
+		err := rows.Scan(
+			&user.UserID,
+			&user.Phone,
+			&user.IsActive,
+			&user.TotalRecharge,
+			&user.RechargeCount,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		// 计算当前价值和盈亏
+		currentValue := user.TotalRecharge
+		recharges, _ := r.GetRechargesByUserID(user.UserID)
+		for _, rech := range recharges {
+			if !rech.IsActive {
+				continue
+			}
+			latestProfit, _ := r.GetLatestRechargeProfit(rech.ID)
+			if latestProfit != nil {
+				rechCurrentValue := rech.Amount * (1 + latestProfit.ProfitRate/100)
+				currentValue += (rechCurrentValue - rech.Amount)
+			}
+		}
+
+		user.CurrentValue = currentValue
+		user.TotalProfit = currentValue - user.TotalRecharge
+		users = append(users, user)
+	}
+
+	return users, nil
+}
+
 func (r *Repository) GetAllDashboardUsers() ([]*model.User, error) {
 	rows, err := r.db.Query(
 		"SELECT id, phone, created_at FROM users WHERE is_admin = 0 ORDER BY created_at DESC",
@@ -389,7 +444,8 @@ func (r *Repository) CreateRecharge(recharge *model.Recharge) (int64, error) {
 
 func (r *Repository) GetRechargesByUserID(userID int) ([]*model.Recharge, error) {
 	rows, err := r.db.Query(
-		`SELECT id, user_id, admin_account_id, amount, currency, recharge_at, base_balance, is_active, created_at
+		`SELECT id, user_id, admin_account_id, amount, currency, recharge_at, 
+		        COALESCE(base_balance, 0), COALESCE(shares, 0), is_active, created_at
 		 FROM recharges WHERE user_id=? ORDER BY recharge_at DESC`,
 		userID,
 	)
@@ -402,7 +458,7 @@ func (r *Repository) GetRechargesByUserID(userID int) ([]*model.Recharge, error)
 	for rows.Next() {
 		r := &model.Recharge{}
 		err := rows.Scan(&r.ID, &r.UserID, &r.AdminAccountID, &r.Amount, &r.Currency,
-			&r.RechargeAt, &r.BaseBalance, &r.IsActive, &r.CreatedAt)
+			&r.RechargeAt, &r.BaseBalance, &r.Shares, &r.IsActive, &r.CreatedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -471,13 +527,13 @@ func (r *Repository) UpdateUserStatus(userID int, isActive bool) error {
 	return err
 }
 
-// GetUserByID 获取用户信息
+// GetUserByID 获取用户信息（含is_active）
 func (r *Repository) GetUserByID(userID int) (*model.User, error) {
 	user := &model.User{}
 	err := r.db.QueryRow(
-		"SELECT id, phone, is_admin, created_at FROM users WHERE id = ?",
+		"SELECT id, phone, password_hash, is_admin, is_active, created_at FROM users WHERE id = ?",
 		userID,
-	).Scan(&user.ID, &user.Phone, &user.IsAdmin, &user.CreatedAt)
+	).Scan(&user.ID, &user.Phone, &user.PasswordHash, &user.IsAdmin, &user.IsActive, &user.CreatedAt)
 
 	if err == sql.ErrNoRows {
 		return nil, nil

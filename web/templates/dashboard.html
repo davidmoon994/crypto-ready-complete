@@ -563,9 +563,7 @@ async function loadRecharges() {
         
         if (!response.ok) {
             console.error('获取充值记录失败，状态码：', response.status);
-            const errorText = await response.text();
-            console.error('错误详情：', errorText);
-            tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #ef4444;">加载失败，请检查登录状态</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #ef4444;">加载失败</td></tr>';
             return;
         }
         
@@ -580,14 +578,30 @@ async function loadRecharges() {
         const isMobile = window.innerWidth <= 768;
         
         if (isMobile) {
-            // 移动端卡片布局
+            // ============ 移动端卡片布局 ============
             tbody.innerHTML = data.recharges.map(r => {
+                console.log('移动端充值记录:', r);
+                
                 const amount = r.amount || 0;
                 const currentProfit = r.current_profit || 0;
                 const currentRate = r.current_rate || 0;
                 const currency = r.currency || 'USDT';
                 const accountType = r.account_type || '未知';
-                const rechargeDate = r.recharge_at ? new Date(r.recharge_at).toLocaleDateString('zh-CN') : '未知';
+                
+                // 日期解析
+                let rechargeDate = '未知';
+                if (r.recharge_at) {
+                    try {
+                        const date = new Date(r.recharge_at);
+                        rechargeDate = date.toLocaleDateString('zh-CN', { 
+                            year: 'numeric', 
+                            month: '2-digit', 
+                            day: '2-digit' 
+                        });
+                    } catch (e) {
+                        console.error('日期解析错误:', e, r.recharge_at);
+                    }
+                }
                 
                 return `
                 <tr>
@@ -626,14 +640,32 @@ async function loadRecharges() {
                 `;
             }).join('');
         } else {
-            // 桌面端表格布局
+            // ============ 桌面端表格布局 ============
             tbody.innerHTML = data.recharges.map(r => {
+                console.log('桌面端充值记录:', r);
+                
                 const amount = r.amount || 0;
                 const currentProfit = r.current_profit || 0;
                 const currentRate = r.current_rate || 0;
                 const currency = r.currency || 'USDT';
                 const accountType = r.account_type || '未知';
-                const rechargeDate = r.recharge_at ? new Date(r.recharge_at).toLocaleDateString('zh-CN') : '未知';
+                
+                // 日期解析
+                let rechargeDate = '未知';
+                if (r.recharge_at) {
+                    try {
+                        const date = new Date(r.recharge_at);
+                        rechargeDate = date.toLocaleDateString('zh-CN', { 
+                            year: 'numeric', 
+                            month: '2-digit', 
+                            day: '2-digit' 
+                        });
+                    } catch (e) {
+                        console.error('日期解析错误:', e, r.recharge_at);
+                    }
+                }
+                
+                console.log('显示数据:', { rechargeDate, amount, currency, accountType });
                 
                 return `
                 <tr>
@@ -657,6 +689,7 @@ async function loadRecharges() {
         tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #ef4444;">加载失败：' + error.message + '</td></tr>';
     }
 }
+
         async function viewHistory(rechargeId, accountType, amount) {
             document.getElementById('historyTitle').textContent = `充值历史 - ${accountType} $${amount}`;
             document.getElementById('historyModal').classList.add('active');
@@ -721,6 +754,15 @@ function checkAuth() {
     
     return true;
 }
+
+// 监听窗口大小变化，自动切换布局
+let resizeTimer;
+window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+        loadRecharges(); // 重新加载充值记录以切换布局
+    }, 250);
+});
 
 // 页面加载时检查并加载数据
 if (checkAuth()) {

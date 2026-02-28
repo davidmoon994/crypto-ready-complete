@@ -323,6 +323,9 @@ func (ws *WalletService) getOKXBalance(account *model.AdminAccount) (float64, er
 		return 0, fmt.Errorf("API返回错误 [%d]: %s", resp.StatusCode, string(respBody))
 	}
 
+	// 打印原始响应用于调试
+	fmt.Printf("  [调试] OKX API响应: %s\n", string(respBody))
+
 	var result struct {
 		Code string `json:"code"`
 		Msg  string `json:"msg"`
@@ -331,9 +334,13 @@ func (ws *WalletService) getOKXBalance(account *model.AdminAccount) (float64, er
 			Details []struct {
 				Ccy       string `json:"ccy"`       // 币种
 				Eq        string `json:"eq"`        // 币种总权益
+				AvailEq   string `json:"availEq"`   // 可用权益
 				CashBal   string `json:"cashBal"`   // 现金余额
 				FrozenBal string `json:"frozenBal"` // 冻结余额
-				UplRatio  string `json:"uplRatio"`  // 未实现盈亏率
+				UplRatio  string `json:"uplRatio"`  // 未实现盈亏比率
+				Upl       string `json:"upl"`       // 未实现盈亏
+				IsoUpl    string `json:"isoUpl"`    // 逐仓未实现盈亏
+				MgnRatio  string `json:"mgnRatio"`  // 保证金率
 			} `json:"details"`
 		} `json:"data"`
 	}
@@ -353,13 +360,16 @@ func (ws *WalletService) getOKXBalance(account *model.AdminAccount) (float64, er
 		for _, detail := range result.Data[0].Details {
 			if detail.Ccy == "USDC" || detail.Ccy == "USDT" {
 				eq, _ := strconv.ParseFloat(detail.Eq, 64)
+				availEq, _ := strconv.ParseFloat(detail.AvailEq, 64)
 				cashBal, _ := strconv.ParseFloat(detail.CashBal, 64)
 				frozenBal, _ := strconv.ParseFloat(detail.FrozenBal, 64)
+				upl, _ := strconv.ParseFloat(detail.Upl, 64)
 
-				if eq > 0 || cashBal > 0 || frozenBal > 0 {
+				// eq应该是总权益，包含持仓和未实现盈亏
+				if eq > 0 {
 					totalBalance += eq
-					fmt.Printf("  OKX %s: %.2f (现金: %.2f, 冻结: %.2f)\n",
-						detail.Ccy, eq, cashBal, frozenBal)
+					fmt.Printf("  OKX %s: 总权益=%.2f (可用=%.2f, 现金=%.2f, 冻结=%.2f, 未实现=%.2f)\n",
+						detail.Ccy, eq, availEq, cashBal, frozenBal, upl)
 				}
 			}
 		}

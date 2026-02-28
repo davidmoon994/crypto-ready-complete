@@ -163,9 +163,13 @@ func (h *Handler) AdminToggleUserStatus(c *gin.Context) {
 	}
 
 	// 获取当前用户状态
-	user, err := h.service.GetUserDetail(userID)
+	user, err := h.service.GetUserByID(userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if user == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
 		return
 	}
 

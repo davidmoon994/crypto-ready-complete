@@ -252,9 +252,14 @@ func (s *Service) ConfigAdminAccount(accountType, apiKey, apiSecret, walletAddre
 	return s.repo.UpdateAdminAccountConfig(accountType, apiKey, apiSecret, walletAddress, passphrase)
 }
 
-// UpdateUserStatus 更新用户状态
+// UpdateUserStatus 更新用户状态（直接设置）
 func (s *Service) UpdateUserStatus(userID int, isActive bool) error {
 	return s.repo.UpdateUserStatus(userID, isActive)
+}
+
+// GetUserByID 获取用户信息
+func (s *Service) GetUserByID(userID int) (*model.User, error) {
+	return s.repo.GetUserByID(userID)
 }
 
 // GetDashboardSummary Dashboard用户总览
