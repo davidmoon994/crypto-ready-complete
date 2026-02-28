@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/big" // 添加这行
 	"net/http"
 	"strconv"
 	"time"
@@ -41,12 +42,46 @@ func (ws *WalletService) GetBalance(account *model.AdminAccount) (float64, error
 
 // ==================== Binance API ====================
 
-// getBinanceBalance 获取币安USDC+USDT余额
 func (ws *WalletService) getBinanceBalance(account *model.AdminAccount) (float64, error) {
 	if account.APIKey == "" || account.APISecret == "" {
 		return 0, fmt.Errorf("未配置Binance API Key")
 	}
 
+	totalBalance := 0.0
+
+	// 1. 获取现货账户余额
+	spotBalance, err := ws.getBinanceSpotBalance(account)
+	if err != nil {
+		fmt.Printf("⚠️  获取Binance现货余额失败: %v\n", err)
+	} else {
+		totalBalance += spotBalance
+		fmt.Printf("  Binance 现货账户: $%.2f\n", spotBalance)
+	}
+
+	// 2. 获取合约账户余额 (USDT-M 永续合约)
+	futuresBalance, err := ws.getBinanceFuturesBalance(account)
+	if err != nil {
+		fmt.Printf("⚠️  获取Binance合约余额失败: %v\n", err)
+	} else {
+		totalBalance += futuresBalance
+		fmt.Printf("  Binance 合约账户: $%.2f\n", futuresBalance)
+	}
+
+	// 3. 获取币本位合约余额 (COIN-M 永续合约)
+	coinFuturesBalance, err := ws.getBinanceCoinFuturesBalance(account)
+	if err != nil {
+		fmt.Printf("⚠️  获取Binance币本位合约余额失败: %v\n", err)
+	} else {
+		totalBalance += coinFuturesBalance
+		fmt.Printf("  Binance 币本位合约: $%.2f\n", coinFuturesBalance)
+	}
+
+	fmt.Printf("  Binance 总余额: $%.2f\n", totalBalance)
+	return totalBalance, nil
+}
+
+// getBinanceSpotBalance 获取现货账户余额
+func (ws *WalletService) getBinanceSpotBalance(account *model.AdminAccount) (float64, error) {
 	timestamp := fmt.Sprintf("%d", time.Now().UnixNano()/1000000)
 	queryString := fmt.Sprintf("timestamp=%s", timestamp)
 	signature := ws.binanceSign(queryString, account.APISecret)
@@ -96,8 +131,135 @@ func (ws *WalletService) getBinanceBalance(account *model.AdminAccount) (float64
 
 			if assetTotal > 0 {
 				totalBalance += assetTotal
-				fmt.Printf("  Binance %s: %.2f (可用: %.2f, 锁定: %.2f)\n",
+				fmt.Printf("    现货 %s: %.2f (可用: %.2f, 锁定: %.2f)\n",
 					balance.Asset, assetTotal, free, locked)
+			}
+		}
+	}
+
+	return totalBalance, nil
+}
+
+// getBinanceFuturesBalance 获取USDT永续合约账户余额
+func (ws *WalletService) getBinanceFuturesBalance(account *model.AdminAccount) (float64, error) {
+	timestamp := fmt.Sprintf("%d", time.Now().UnixNano()/1000000)
+	queryString := fmt.Sprintf("timestamp=%s", timestamp)
+	signature := ws.binanceSign(queryString, account.APISecret)
+
+	url := "https://fapi.binance.com/fapi/v2/balance?" + queryString + "&signature=" + signature
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return 0, err
+	}
+
+	req.Header.Set("X-MBX-APIKEY", account.APIKey)
+
+	resp, err := ws.httpClient.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, err
+	}
+
+	if resp.StatusCode != 200 {
+		return 0, fmt.Errorf("API返回错误 [%d]: %s", resp.StatusCode, string(body))
+	}
+
+	var result []struct {
+		Asset              string `json:"asset"`
+		Balance            string `json:"balance"`
+		CrossWalletBalance string `json:"crossWalletBalance"`
+		CrossUnPnl         string `json:"crossUnPnl"`
+	}
+
+	if err := json.Unmarshal(body, &result); err != nil {
+		return 0, err
+	}
+
+	totalBalance := 0.0
+	// 同时统计USDT和USDC
+	for _, balance := range result {
+		if balance.Asset == "USDC" || balance.Asset == "USDT" {
+			// 钱包余额
+			walletBalance, _ := strconv.ParseFloat(balance.CrossWalletBalance, 64)
+			// 未实现盈亏
+			unrealizedPnl, _ := strconv.ParseFloat(balance.CrossUnPnl, 64)
+			// 总权益 = 钱包余额 + 未实现盈亏
+			equity := walletBalance + unrealizedPnl
+
+			if equity > 0 || walletBalance > 0 || unrealizedPnl != 0 {
+				totalBalance += equity
+				fmt.Printf("    合约 %s: %.2f (钱包: %.2f, 未实现: %.2f)\n",
+					balance.Asset, equity, walletBalance, unrealizedPnl)
+			}
+		}
+	}
+
+	return totalBalance, nil
+}
+
+// getBinanceCoinFuturesBalance 获取币本位永续合约账户余额
+func (ws *WalletService) getBinanceCoinFuturesBalance(account *model.AdminAccount) (float64, error) {
+	timestamp := fmt.Sprintf("%d", time.Now().UnixNano()/1000000)
+	queryString := fmt.Sprintf("timestamp=%s", timestamp)
+	signature := ws.binanceSign(queryString, account.APISecret)
+
+	url := "https://dapi.binance.com/dapi/v1/balance?" + queryString + "&signature=" + signature
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return 0, err
+	}
+
+	req.Header.Set("X-MBX-APIKEY", account.APIKey)
+
+	resp, err := ws.httpClient.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, err
+	}
+
+	if resp.StatusCode != 200 {
+		// 如果没有币本位合约权限，返回0而不是错误
+		if resp.StatusCode == 400 || resp.StatusCode == 401 {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("API返回错误 [%d]: %s", resp.StatusCode, string(body))
+	}
+
+	var result []struct {
+		Asset              string `json:"asset"`
+		Balance            string `json:"balance"`
+		CrossWalletBalance string `json:"crossWalletBalance"`
+		CrossUnPnl         string `json:"crossUnPnl"`
+	}
+
+	if err := json.Unmarshal(body, &result); err != nil {
+		return 0, err
+	}
+
+	// 统计USDT和USDC（币本位合约也可能有稳定币）
+	totalBalance := 0.0
+	for _, balance := range result {
+		if balance.Asset == "USDT" || balance.Asset == "USDC" {
+			walletBalance, _ := strconv.ParseFloat(balance.CrossWalletBalance, 64)
+			unrealizedPnl, _ := strconv.ParseFloat(balance.CrossUnPnl, 64)
+			equity := walletBalance + unrealizedPnl
+
+			if equity > 0 || walletBalance > 0 || unrealizedPnl != 0 {
+				totalBalance += equity
+				fmt.Printf("    币本位合约 %s: %.2f (钱包: %.2f, 未实现: %.2f)\n",
+					balance.Asset, equity, walletBalance, unrealizedPnl)
 			}
 		}
 	}
@@ -165,10 +327,13 @@ func (ws *WalletService) getOKXBalance(account *model.AdminAccount) (float64, er
 		Code string `json:"code"`
 		Msg  string `json:"msg"`
 		Data []struct {
+			TotalEq string `json:"totalEq"` // 总权益（USD）
 			Details []struct {
-				Ccy       string `json:"ccy"`
-				CashBal   string `json:"cashBal"`   // 现金余额（可用）
+				Ccy       string `json:"ccy"`       // 币种
+				Eq        string `json:"eq"`        // 币种总权益
+				CashBal   string `json:"cashBal"`   // 现金余额
 				FrozenBal string `json:"frozenBal"` // 冻结余额
+				UplRatio  string `json:"uplRatio"`  // 未实现盈亏率
 			} `json:"details"`
 		} `json:"data"`
 	}
@@ -182,19 +347,25 @@ func (ws *WalletService) getOKXBalance(account *model.AdminAccount) (float64, er
 	}
 
 	totalBalance := 0.0
+
 	if len(result.Data) > 0 {
+		// 统计USDC和USDT的权益
 		for _, detail := range result.Data[0].Details {
 			if detail.Ccy == "USDC" || detail.Ccy == "USDT" {
+				eq, _ := strconv.ParseFloat(detail.Eq, 64)
 				cashBal, _ := strconv.ParseFloat(detail.CashBal, 64)
 				frozenBal, _ := strconv.ParseFloat(detail.FrozenBal, 64)
-				assetTotal := cashBal + frozenBal
 
-				if assetTotal > 0 {
-					totalBalance += assetTotal
-					fmt.Printf("  OKX %s: %.2f (可用: %.2f, 冻结: %.2f)\n",
-						detail.Ccy, assetTotal, cashBal, frozenBal)
+				if eq > 0 || cashBal > 0 || frozenBal > 0 {
+					totalBalance += eq
+					fmt.Printf("  OKX %s: %.2f (现金: %.2f, 冻结: %.2f)\n",
+						detail.Ccy, eq, cashBal, frozenBal)
 				}
 			}
+		}
+
+		if totalBalance > 0 {
+			fmt.Printf("  OKX 总权益: $%.2f\n", totalBalance)
 		}
 	}
 
@@ -216,66 +387,63 @@ func (ws *WalletService) getWalletBalance(account *model.AdminAccount) (float64,
 		return 0, fmt.Errorf("未配置钱包地址")
 	}
 
-	// 需要Etherscan API Key（可以免费申请）
-	// 暂时使用API Secret字段存储Etherscan API Key
+	// API Key存储在APISecret字段
 	etherscanAPIKey := account.APISecret
 	if etherscanAPIKey == "" {
-		etherscanAPIKey = "YourApiKeyToken" // 替换为你的Etherscan API Key
+		etherscanAPIKey = "YourEtherscanAPIKey" // 备用Key
 	}
 
-	totalBalance := 0.0
+	// USDC合约地址
+	usdcContract := "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+	// USDT合约地址
+	usdtContract := "0xdAC17F958D2ee523a2206206994597C13D831ec7"
 
-	// 获取USDC余额（ERC20）
-	usdcBalance, err := ws.getERC20Balance(
-		account.WalletAddress,
-		"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", // USDC合约地址
-		etherscanAPIKey,
-		6, // USDC精度
-	)
+	// 获取USDC余额
+	usdcBalance, err := ws.getERC20Balance(account.WalletAddress, usdcContract, etherscanAPIKey, 6)
 	if err != nil {
-		fmt.Printf("  ⚠️  获取USDC余额失败: %v\n", err)
-	} else {
-		fmt.Printf("  Wallet USDC: %.2f\n", usdcBalance)
-		totalBalance += usdcBalance
+		fmt.Printf("⚠️  获取链上USDC余额失败: %v\n", err)
+		usdcBalance = 0
 	}
 
-	// 获取USDT余额（ERC20）
-	usdtBalance, err := ws.getERC20Balance(
-		account.WalletAddress,
-		"0xdAC17F958D2ee523a2206206994597C13D831ec7", // USDT合约地址
-		etherscanAPIKey,
-		6, // USDT精度
-	)
+	// 获取USDT余额
+	usdtBalance, err := ws.getERC20Balance(account.WalletAddress, usdtContract, etherscanAPIKey, 6)
 	if err != nil {
-		fmt.Printf("  ⚠️  获取USDT余额失败: %v\n", err)
-	} else {
-		fmt.Printf("  Wallet USDT: %.2f\n", usdtBalance)
-		totalBalance += usdtBalance
+		fmt.Printf("⚠️  获取链上USDT余额失败: %v\n", err)
+		usdtBalance = 0
 	}
 
-	if totalBalance == 0 && (err != nil) {
-		return 0, fmt.Errorf("无法获取钱包余额")
+	totalBalance := usdcBalance + usdtBalance
+
+	// 详细显示
+	if usdcBalance > 0 {
+		fmt.Printf("  链上钱包 USDC: %.2f\n", usdcBalance)
+	}
+	if usdtBalance > 0 {
+		fmt.Printf("  链上钱包 USDT: %.2f\n", usdtBalance)
+	}
+	if totalBalance > 0 {
+		fmt.Printf("  链上钱包 总余额: $%.2f\n", totalBalance)
 	}
 
 	return totalBalance, nil
 }
 
 // getERC20Balance 获取ERC20代币余额
-func (ws *WalletService) getERC20Balance(address, contractAddress, apiKey string, decimals int) (float64, error) {
+func (ws *WalletService) getERC20Balance(walletAddress, contractAddress, apiKey string, decimals int) (float64, error) {
 	url := fmt.Sprintf(
 		"https://api.etherscan.io/api?module=account&action=tokenbalance&contractaddress=%s&address=%s&tag=latest&apikey=%s",
-		contractAddress, address, apiKey,
+		contractAddress, walletAddress, apiKey,
 	)
 
 	resp, err := ws.httpClient.Get(url)
 	if err != nil {
-		return 0, fmt.Errorf("API请求失败: %v", err)
+		return 0, err
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return 0, fmt.Errorf("读取响应失败: %v", err)
+		return 0, err
 	}
 
 	var result struct {
@@ -285,25 +453,22 @@ func (ws *WalletService) getERC20Balance(address, contractAddress, apiKey string
 	}
 
 	if err := json.Unmarshal(body, &result); err != nil {
-		return 0, fmt.Errorf("解析响应失败: %v", err)
+		return 0, err
 	}
 
 	if result.Status != "1" {
-		return 0, fmt.Errorf("Etherscan API错误: %s", result.Message)
+		return 0, fmt.Errorf("API返回错误: %s", result.Message)
 	}
 
-	// 解析余额（需要除以10^decimals）
-	balanceInt, err := strconv.ParseInt(result.Result, 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("解析余额失败: %v", err)
-	}
+	// 使用big.Int处理大数字（推荐方法）
+	balance := new(big.Int)
+	balance.SetString(result.Result, 10)
 
-	// 转换为实际余额
-	divisor := 1.0
-	for i := 0; i < decimals; i++ {
-		divisor *= 10
-	}
-	balance := float64(balanceInt) / divisor
+	// 根据小数位数转换
+	divisor := new(big.Float).SetInt(new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(decimals)), nil))
+	balanceFloat := new(big.Float).SetInt(balance)
+	balanceFloat.Quo(balanceFloat, divisor)
 
-	return balance, nil
+	floatBalance, _ := balanceFloat.Float64()
+	return floatBalance, nil
 }
