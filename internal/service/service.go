@@ -94,42 +94,58 @@ func (s *Service) AdminRecharge(userID int, adminAccountID int, amount float64, 
 		return errors.New("Admin账户不存在")
 	}
 
-	// 获取当前账户状态
+	fmt.Printf("\n💰 充值操作开始:\n")
+	fmt.Printf("  用户: %s (ID: %d)\n", user.Phone, userID)
+	fmt.Printf("  充值金额: $%.2f %s\n", amount, currency)
+	fmt.Printf("  充值到: %s (ID: %d)\n", adminAccount.AccountType, adminAccountID)
+
+	// 🔥 步骤1: 充值前先刷新账户余额（从API获取最新余额）
+	fmt.Println("\n  [步骤1] 充值前刷新账户余额...")
+
+	latestBalance, err := s.walletService.GetBalance(adminAccount)
+	if err != nil {
+		fmt.Printf("  ⚠️  获取最新余额失败: %v\n", err)
+		fmt.Println("  → 使用数据库中的余额")
+	} else {
+		// 更新数据库中的余额
+		s.repo.UpdateAdminAccountBalance(adminAccountID, latestBalance)
+		adminAccount.CurrentBalance = latestBalance
+		fmt.Printf("  ✓ 最新余额: $%.2f\n", latestBalance)
+	}
+
 	currentBalance := adminAccount.CurrentBalance
 	currentShares := adminAccount.TotalShares
 
-	fmt.Printf("\n💰 充值操作:\n")
-	fmt.Printf("  用户: %s\n", user.Phone)
-	fmt.Printf("  充值金额: $%.2f %s\n", amount, currency)
-	fmt.Printf("  充值到: %s\n", adminAccount.AccountType)
-	fmt.Printf("  充值前余额: $%.2f\n", currentBalance)
-	fmt.Printf("  充值前总份额: %.4f\n", currentShares)
+	fmt.Printf("\n  [步骤2] 当前账户状态:\n")
+	fmt.Printf("    余额: $%.2f\n", currentBalance)
+	fmt.Printf("    总份额: %.4f\n", currentShares)
 
-	// 计算份额
+	// 🔥 步骤3: 计算份额
 	var purchasedShares float64
 	var netValue float64
 
 	if currentShares == 0 || currentBalance == 0 {
-		// 第一笔充值：初始化净值为1
+		// 首次充值：净值初始化为1
 		purchasedShares = amount
 		netValue = 1.0
-		fmt.Printf("  首次充值，净值初始化为: $1.00\n")
+		fmt.Printf("\n  [步骤3] 首次充值，净值初始化为: $1.00\n")
 	} else {
 		// 后续充值：根据当前净值计算份额
 		netValue = currentBalance / currentShares
 		purchasedShares = amount / netValue
-		fmt.Printf("  当前净值: $%.4f\n", netValue)
+		fmt.Printf("\n  [步骤3] 计算份额:\n")
+		fmt.Printf("    当前净值: $%.4f\n", netValue)
 	}
 
-	fmt.Printf("  购买份额: %.4f\n", purchasedShares)
+	fmt.Printf("    购买份额: %.4f\n", purchasedShares)
 
-	// 更新Admin账户的总份额
+	// 🔥 步骤4: 更新账户总份额
 	newTotalShares := currentShares + purchasedShares
 	if err := s.repo.UpdateAdminAccountShares(adminAccountID, newTotalShares); err != nil {
 		return fmt.Errorf("更新账户份额失败: %v", err)
 	}
 
-	// 创建充值记录
+	// 🔥 步骤5: 创建充值记录
 	rechargeID, err := s.repo.CreateRechargeWithShares(
 		userID,
 		adminAccountID,
@@ -144,9 +160,34 @@ func (s *Service) AdminRecharge(userID int, adminAccountID int, amount float64, 
 		return fmt.Errorf("创建充值记录失败: %v", err)
 	}
 
-	fmt.Printf("✓ 充值记录已创建 (ID: %d)\n", rechargeID)
-	fmt.Printf("✓ 新总份额: %.4f\n", newTotalShares)
+	fmt.Printf("\n  [步骤4] ✓ 充值记录已创建 (ID: %d)\n", rechargeID)
+	fmt.Printf("    新总份额: %.4f\n", newTotalShares)
 
+	// 🔥 步骤6: 充值后再次刷新余额（用户已经充值到交易所了）
+	fmt.Println("\n  [步骤5] 充值后刷新账户余额...")
+	fmt.Println("  ⚠️  请确保已将 $%.2f %s 充值到 %s 账户", amount, currency, adminAccount.AccountType)
+
+	// 等待几秒让用户完成充值（可选）
+	// time.Sleep(5 * time.Second)
+
+	updatedBalance, err := s.walletService.GetBalance(adminAccount)
+	if err != nil {
+		fmt.Printf("  ⚠️  获取充值后余额失败: %v\n", err)
+	} else {
+		s.repo.UpdateAdminAccountBalance(adminAccountID, updatedBalance)
+		fmt.Printf("  ✓ 充值后余额: $%.2f\n", updatedBalance)
+
+		// 验证净值是否保持不变
+		newNetValue := updatedBalance / newTotalShares
+		fmt.Printf("  ✓ 新净值: $%.4f ", newNetValue)
+		if abs(newNetValue-netValue) < 0.001 {
+			fmt.Println("(净值保持稳定✓)")
+		} else {
+			fmt.Printf("(与充值前净值 $%.4f 有差异⚠️)\n", netValue)
+		}
+	}
+
+	fmt.Println("\n✓ 充值操作完成")
 	return nil
 }
 
@@ -516,7 +557,7 @@ func (s *Service) UpdateDailyBalances() error {
 		return err
 	}
 
-	fmt.Printf("开始计算%d笔充值的盈亏...\n", len(allRecharges))
+	fmt.Printf("共有 %d 笔活跃充值需要计算盈亏\n", len(allRecharges))
 
 	for _, recharge := range allRecharges {
 		// 获取Admin账户当前状态
@@ -529,7 +570,7 @@ func (s *Service) UpdateDailyBalances() error {
 		currentBalance := adminAccount.CurrentBalance
 		totalShares := adminAccount.TotalShares
 
-		// 核心算法：基于份额计算
+		// 🔥 核心算法：基于份额计算盈亏
 		var currentValue float64
 		var profit float64
 		var profitRate float64
@@ -544,13 +585,25 @@ func (s *Service) UpdateDailyBalances() error {
 			// 盈亏 = 当前价值 - 本金
 			profit = currentValue - recharge.Amount
 
-			// 盈亏率
+			// 盈亏率 = 盈亏 / 本金 × 100%
 			if recharge.Amount > 0 {
 				profitRate = (profit / recharge.Amount) * 100
 			}
 
-			fmt.Printf("  充值ID %d: 本金=$%.2f, 份额=%.4f, 净值=$%.4f, 当前=$%.2f, 盈亏=%s$%.2f (%.2f%%)\n",
+			// 获取用户信息用于日志
+			user, _ := s.repo.GetUserByID(recharge.UserID)
+			userName := "未知"
+			if user != nil {
+				if user.Phone == "system" {
+					userName = "系统"
+				} else {
+					userName = user.Phone
+				}
+			}
+
+			fmt.Printf("  充值ID %d [%s]: 本金=$%.2f, 份额=%.4f, 净值=$%.4f, 当前=$%.2f, 盈亏=%s$%.2f (%.2f%%)\n",
 				recharge.ID,
+				userName,
 				recharge.Amount,
 				recharge.Shares,
 				netValue,
@@ -558,11 +611,12 @@ func (s *Service) UpdateDailyBalances() error {
 				formatSign(profit), abs(profit),
 				profitRate)
 		} else {
-			// 异常情况
+			// 异常情况：份额为0
 			currentValue = recharge.Amount
 			profit = 0
 			profitRate = 0
-			fmt.Printf("⚠️  充值ID %d: 份额数据异常\n", recharge.ID)
+			fmt.Printf("⚠️  充值ID %d: 份额数据异常(shares=%.4f, totalShares=%.4f)\n",
+				recharge.ID, recharge.Shares, totalShares)
 		}
 
 		// 保存盈亏记录
@@ -573,12 +627,12 @@ func (s *Service) UpdateDailyBalances() error {
 	}
 
 	fmt.Println("✓ 成功计算充值盈亏")
-	fmt.Printf("==========每日余额检查完成 (成功: %d, 失败: %d) ==========\n\n", successCount, errorCount)
+	fmt.Printf("\n========== 每日余额检查完成 (成功: %d, 失败: %d) ==========\n\n", successCount, errorCount)
 
-	return nil
-}
+	return nil // ✅ 添加这行
+} // ✅ 添加这个结束大括号
 
-// 辅助函数
+// formatSign 格式化符号
 func formatSign(value float64) string {
 	if value >= 0 {
 		return "+"
@@ -586,6 +640,7 @@ func formatSign(value float64) string {
 	return ""
 }
 
+// abs 绝对值
 func abs(value float64) float64 {
 	if value < 0 {
 		return -value
