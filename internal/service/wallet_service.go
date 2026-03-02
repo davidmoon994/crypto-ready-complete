@@ -298,40 +298,16 @@ func (ws *WalletService) getOKXBalance(account *model.AdminAccount) (float64, er
 
 	totalBalance := 0.0
 
-	// 1. 获取交易账户余额（包含现货和杠杆）
+	// 只查询交易账户余额（已包含所有持仓和未实现盈亏）
 	tradingBalance, err := ws.getOKXTradingBalance(account)
 	if err != nil {
 		fmt.Printf("  ⚠️  获取OKX交易账户失败: %v\n", err)
-	} else {
-		totalBalance += tradingBalance
-		if tradingBalance > 0 {
-			fmt.Printf("  OKX 交易账户: $%.2f\n", tradingBalance)
-		}
+		return 0, err
 	}
 
-	// 2. 获取资金账户余额
-	fundingBalance, err := ws.getOKXFundingBalance(account)
-	if err != nil {
-		fmt.Printf("  ⚠️  获取OKX资金账户失败: %v\n", err)
-	} else {
-		totalBalance += fundingBalance
-		if fundingBalance > 0 {
-			fmt.Printf("  OKX 资金账户: $%.2f\n", fundingBalance)
-		}
-	}
-
-	// 3. 获取统一账户余额（包含所有持仓和未实现盈亏）
-	unifiedBalance, err := ws.getOKXUnifiedBalance(account)
-	if err != nil {
-		fmt.Printf("  ⚠️  获取OKX统一账户失败: %v\n", err)
-	} else {
-		totalBalance += unifiedBalance
-		if unifiedBalance > 0 {
-			fmt.Printf("  OKX 统一账户: $%.2f\n", unifiedBalance)
-		}
-	}
-
+	totalBalance = tradingBalance
 	fmt.Printf("  ✓ OKX 总资产: $%.2f\n", totalBalance)
+
 	return totalBalance, nil
 }
 
@@ -404,6 +380,7 @@ func (ws *WalletService) getOKXTradingBalance(account *model.AdminAccount) (floa
 		for _, detail := range result.Data[0].Details {
 			if detail.Ccy == "USDC" || detail.Ccy == "USDT" {
 				eq, _ := strconv.ParseFloat(detail.Eq, 64)
+				availEq, _ := strconv.ParseFloat(detail.AvailEq, 64)
 				cashBal, _ := strconv.ParseFloat(detail.CashBal, 64)
 				frozenBal, _ := strconv.ParseFloat(detail.FrozenBal, 64)
 				ordFrozen, _ := strconv.ParseFloat(detail.OrdFrozen, 64)
@@ -411,8 +388,8 @@ func (ws *WalletService) getOKXTradingBalance(account *model.AdminAccount) (floa
 
 				if eq > 0 {
 					totalBalance += eq
-					fmt.Printf("    交易-%s: 权益=$%.2f (现金=$%.2f, 冻结=$%.2f, 挂单=$%.2f, 未实现=$%.2f)\n",
-						detail.Ccy, eq, cashBal, frozenBal, ordFrozen, upl)
+					fmt.Printf("  OKX %s: 总权益=$%.2f (可用=$%.2f, 现金=$%.2f, 冻结=$%.2f, 挂单=$%.2f, 未实现=$%.2f)\n",
+						detail.Ccy, eq, availEq, cashBal, frozenBal, ordFrozen, upl)
 				}
 			}
 		}

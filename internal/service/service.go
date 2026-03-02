@@ -616,6 +616,11 @@ func (s *Service) GetDashboardRecharges(userID int) ([]*model.RechargeResponse, 
 
 	var result []*model.RechargeResponse
 	for _, r := range recharges {
+		// 只返回活跃的充值
+		if !r.IsActive {
+			continue
+		}
+
 		// 获取账户类型
 		account, _ := s.repo.GetAdminAccountByID(r.AdminAccountID)
 		accountType := "未知"

@@ -559,16 +559,13 @@ async function loadRecharges() {
             headers: { 'Authorization': authHeader } 
         });
         
-        console.log('充值记录响应状态:', response.status);
-        
         if (!response.ok) {
-            console.error('获取充值记录失败，状态码：', response.status);
             tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #ef4444;">加载失败</td></tr>';
             return;
         }
         
         const data = await response.json();
-        console.log('充值记录数据:', data);
+        console.log('充值记录原始数据:', data);
         
         if (!data.recharges || data.recharges.length === 0) {
             tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #999;">暂无充值记录</td></tr>';
@@ -577,58 +574,60 @@ async function loadRecharges() {
         
         const isMobile = window.innerWidth <= 768;
         
-        if (isMobile) {
-            // ============ 移动端卡片布局 ============
-            tbody.innerHTML = data.recharges.map(r => {
-                console.log('移动端充值记录:', r);
-                
-                const amount = r.amount || 0;
-                const currentProfit = r.current_profit || 0;
-                const currentRate = r.current_rate || 0;
-                const currency = r.currency || 'USDT';
-                const accountType = r.account_type || '未知';
-                
-                // 日期解析
-                let rechargeDate = '未知';
-                if (r.recharge_at) {
-                    try {
-                        const date = new Date(r.recharge_at);
-                        rechargeDate = date.toLocaleDateString('zh-CN', { 
-                            year: 'numeric', 
-                            month: '2-digit', 
-                            day: '2-digit' 
-                        });
-                    } catch (e) {
-                        console.error('日期解析错误:', e, r.recharge_at);
-                    }
+        // 处理每条记录
+        const records = data.recharges.map(item => {
+            // 兼容两种数据结构
+            const r = item.recharge || item;
+            
+            const id = r.id;
+            const amount = r.amount || 0;
+            const currency = r.currency || 'USDT';
+            const accountType = item.account_type || '未知';
+            const currentProfit = item.current_profit || 0;
+            const currentRate = item.current_rate || 0;
+            
+            // 日期解析
+            let rechargeDate = '未知';
+            if (r.recharge_at) {
+                try {
+                    const date = new Date(r.recharge_at);
+                    rechargeDate = date.toLocaleDateString('zh-CN');
+                } catch (e) {
+                    console.error('日期解析错误:', e);
                 }
-                
-                return `
+            }
+            
+            return { id, amount, currency, accountType, rechargeDate, currentProfit, currentRate };
+        });
+        
+        if (isMobile) {
+            // 移动端卡片布局
+            tbody.innerHTML = records.map(r => `
                 <tr>
                     <td colspan="7">
                         <div class="recharge-card">
                             <div class="recharge-card-row">
                                 <span class="recharge-card-label">时间</span>
-                                <span class="recharge-card-value">${rechargeDate}</span>
+                                <span class="recharge-card-value">${r.rechargeDate}</span>
                             </div>
                             <div class="recharge-card-row">
                                 <span class="recharge-card-label">金额</span>
-                                <span class="recharge-card-value">$${amount.toFixed(2)} ${currency}</span>
+                                <span class="recharge-card-value">$${r.amount.toFixed(2)} ${r.currency}</span>
                             </div>
                             <div class="recharge-card-row">
                                 <span class="recharge-card-label">充值到</span>
-                                <span class="recharge-card-value">${accountType}</span>
+                                <span class="recharge-card-value">${r.accountType}</span>
                             </div>
                             <div class="recharge-card-row">
                                 <span class="recharge-card-label">当前盈亏</span>
-                                <span class="recharge-card-value" style="color: ${currentProfit >= 0 ? '#10b981' : '#ef4444'}">
-                                    ${currentProfit >= 0 ? '+' : ''}$${currentProfit.toFixed(2)}
+                                <span class="recharge-card-value" style="color: ${r.currentProfit >= 0 ? '#10b981' : '#ef4444'}">
+                                    ${r.currentProfit >= 0 ? '+' : ''}$${r.currentProfit.toFixed(2)}
                                 </span>
                             </div>
                             <div class="recharge-card-row">
                                 <span class="recharge-card-label">盈亏率</span>
-                                <span class="recharge-card-value" style="color: ${currentRate >= 0 ? '#10b981' : '#ef4444'}">
-                                    ${currentRate >= 0 ? '+' : ''}${currentRate.toFixed(2)}%
+                                <span class="recharge-card-value" style="color: ${r.currentRate >= 0 ? '#10b981' : '#ef4444'}">
+                                    ${r.currentRate >= 0 ? '+' : ''}${r.currentRate.toFixed(2)}%
                                 </span>
                             </div>
                             <div class="recharge-card-row">
@@ -637,59 +636,30 @@ async function loadRecharges() {
                         </div>
                     </td>
                 </tr>
-                `;
-            }).join('');
+            `).join('');
         } else {
-            // ============ 桌面端表格布局 ============
-            tbody.innerHTML = data.recharges.map(r => {
-                console.log('桌面端充值记录:', r);
-                
-                const amount = r.amount || 0;
-                const currentProfit = r.current_profit || 0;
-                const currentRate = r.current_rate || 0;
-                const currency = r.currency || 'USDT';
-                const accountType = r.account_type || '未知';
-                
-                // 日期解析
-                let rechargeDate = '未知';
-                if (r.recharge_at) {
-                    try {
-                        const date = new Date(r.recharge_at);
-                        rechargeDate = date.toLocaleDateString('zh-CN', { 
-                            year: 'numeric', 
-                            month: '2-digit', 
-                            day: '2-digit' 
-                        });
-                    } catch (e) {
-                        console.error('日期解析错误:', e, r.recharge_at);
-                    }
-                }
-                
-                console.log('显示数据:', { rechargeDate, amount, currency, accountType });
-                
-                return `
+            // 桌面端表格布局
+            tbody.innerHTML = records.map(r => `
                 <tr>
-                    <td>${rechargeDate}</td>
-                    <td>$${amount.toFixed(2)}</td>
-                    <td>${currency}</td>
-                    <td>${accountType}</td>
-                    <td style="color: ${currentProfit >= 0 ? '#10b981' : '#ef4444'}">
-                        ${currentProfit >= 0 ? '+' : ''}$${currentProfit.toFixed(2)}
+                    <td>${r.rechargeDate}</td>
+                    <td>$${r.amount.toFixed(2)}</td>
+                    <td>${r.currency}</td>
+                    <td>${r.accountType}</td>
+                    <td style="color: ${r.currentProfit >= 0 ? '#10b981' : '#ef4444'}">
+                        ${r.currentProfit >= 0 ? '+' : ''}$${r.currentProfit.toFixed(2)}
                     </td>
-                    <td style="color: ${currentRate >= 0 ? '#10b981' : '#ef4444'}">
-                        ${currentRate >= 0 ? '+' : ''}${currentRate.toFixed(2)}%
+                    <td style="color: ${r.currentRate >= 0 ? '#10b981' : '#ef4444'}">
+                        ${r.currentRate >= 0 ? '+' : ''}${r.currentRate.toFixed(2)}%
                     </td>
                     <td><button class="btn" onclick="viewHistory(${r.id})">查看历史</button></td>
                 </tr>
-                `;
-            }).join('');
+            `).join('');
         }
     } catch (error) {
         console.error('加载充值记录失败：', error);
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #ef4444;">加载失败：' + error.message + '</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #ef4444;">加载失败</td></tr>';
     }
 }
-
         async function viewHistory(rechargeId, accountType, amount) {
             document.getElementById('historyTitle').textContent = `充值历史 - ${accountType} $${amount}`;
             document.getElementById('historyModal').classList.add('active');
