@@ -296,19 +296,15 @@ func (ws *WalletService) getOKXBalance(account *model.AdminAccount) (float64, er
 		return 0, fmt.Errorf("未配置OKX Passphrase")
 	}
 
-	totalBalance := 0.0
-
-	// 只查询交易账户余额（已包含所有持仓和未实现盈亏）
-	tradingBalance, err := ws.getOKXTradingBalance(account)
+	// 🔥 只查询交易账户（已包含所有持仓、未实现盈亏和资金）
+	balance, err := ws.getOKXTradingBalance(account)
 	if err != nil {
-		fmt.Printf("  ⚠️  获取OKX交易账户失败: %v\n", err)
+		fmt.Printf("  ⚠️  获取OKX账户失败: %v\n", err)
 		return 0, err
 	}
 
-	totalBalance = tradingBalance
-	fmt.Printf("  ✓ OKX 总资产: $%.2f\n", totalBalance)
-
-	return totalBalance, nil
+	fmt.Printf("  ✓ OKX 总资产: $%.2f\n", balance)
+	return balance, nil
 }
 
 // getOKXTradingBalance 获取交易账户余额
@@ -396,154 +392,6 @@ func (ws *WalletService) getOKXTradingBalance(account *model.AdminAccount) (floa
 	}
 
 	return totalBalance, nil
-}
-
-// getOKXFundingBalance 获取资金账户余额
-func (ws *WalletService) getOKXFundingBalance(account *model.AdminAccount) (float64, error) {
-	timestamp := time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
-	method := "GET"
-	requestPath := "/api/v5/asset/balances"
-	body := ""
-
-	message := timestamp + method + requestPath + body
-	signature := ws.okxSign(message, account.APISecret)
-
-	url := "https://www.okx.com" + requestPath
-
-	req, err := http.NewRequest(method, url, nil)
-	if err != nil {
-		return 0, err
-	}
-
-	req.Header.Set("OK-ACCESS-KEY", account.APIKey)
-	req.Header.Set("OK-ACCESS-SIGN", signature)
-	req.Header.Set("OK-ACCESS-TIMESTAMP", timestamp)
-	req.Header.Set("OK-ACCESS-PASSPHRASE", account.Passphrase)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := ws.httpClient.Do(req)
-	if err != nil {
-		return 0, err
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return 0, err
-	}
-
-	if resp.StatusCode != 200 {
-		return 0, fmt.Errorf("API返回错误 [%d]: %s", resp.StatusCode, string(respBody))
-	}
-
-	var result struct {
-		Code string `json:"code"`
-		Msg  string `json:"msg"`
-		Data []struct {
-			Ccy       string `json:"ccy"`
-			Bal       string `json:"bal"`       // 余额
-			FrozenBal string `json:"frozenBal"` // 冻结
-			AvailBal  string `json:"availBal"`  // 可用
-		} `json:"data"`
-	}
-
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		return 0, err
-	}
-
-	if result.Code != "0" {
-		return 0, fmt.Errorf("API返回错误 [%s]: %s", result.Code, result.Msg)
-	}
-
-	totalBalance := 0.0
-
-	for _, item := range result.Data {
-		if item.Ccy == "USDC" || item.Ccy == "USDT" {
-			bal, _ := strconv.ParseFloat(item.Bal, 64)
-			frozenBal, _ := strconv.ParseFloat(item.FrozenBal, 64)
-			availBal, _ := strconv.ParseFloat(item.AvailBal, 64)
-
-			if bal > 0 {
-				totalBalance += bal
-				fmt.Printf("    资金-%s: 总额=$%.2f (可用=$%.2f, 冻结=$%.2f)\n",
-					item.Ccy, bal, availBal, frozenBal)
-			}
-		}
-	}
-
-	return totalBalance, nil
-}
-
-// getOKXUnifiedBalance 获取统一账户余额（包含持仓）
-func (ws *WalletService) getOKXUnifiedBalance(account *model.AdminAccount) (float64, error) {
-	timestamp := time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
-	method := "GET"
-	requestPath := "/api/v5/account/balance"
-	body := ""
-
-	message := timestamp + method + requestPath + body
-	signature := ws.okxSign(message, account.APISecret)
-
-	url := "https://www.okx.com" + requestPath
-
-	req, err := http.NewRequest(method, url, nil)
-	if err != nil {
-		return 0, err
-	}
-
-	req.Header.Set("OK-ACCESS-KEY", account.APIKey)
-	req.Header.Set("OK-ACCESS-SIGN", signature)
-	req.Header.Set("OK-ACCESS-TIMESTAMP", timestamp)
-	req.Header.Set("OK-ACCESS-PASSPHRASE", account.Passphrase)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := ws.httpClient.Do(req)
-	if err != nil {
-		return 0, err
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return 0, err
-	}
-
-	if resp.StatusCode != 200 {
-		return 0, fmt.Errorf("API返回错误 [%d]: %s", resp.StatusCode, string(respBody))
-	}
-
-	var result struct {
-		Code string `json:"code"`
-		Msg  string `json:"msg"`
-		Data []struct {
-			TotalEq     string `json:"totalEq"`     // 美元层面权益
-			IsoEq       string `json:"isoEq"`       // 逐仓权益
-			AdjEq       string `json:"adjEq"`       // 有效保证金
-			NotionalUsd string `json:"notionalUsd"` // 持仓美元价值
-		} `json:"data"`
-	}
-
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		return 0, err
-	}
-
-	if result.Code != "0" {
-		return 0, fmt.Errorf("API返回错误 [%s]: %s", result.Code, result.Msg)
-	}
-
-	// 使用totalEq作为统一账户总权益
-	if len(result.Data) > 0 {
-		totalEq, _ := strconv.ParseFloat(result.Data[0].TotalEq, 64)
-		notional, _ := strconv.ParseFloat(result.Data[0].NotionalUsd, 64)
-
-		if totalEq > 0 || notional > 0 {
-			fmt.Printf("    统一账户: 总权益=$%.2f (持仓价值=$%.2f)\n", totalEq, notional)
-		}
-
-		return totalEq, nil
-	}
-
-	return 0, nil
 }
 
 // okxSign 生成OKX签名
