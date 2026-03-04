@@ -35,6 +35,12 @@ func (s *Service) HashPassword(password string) string {
 	return hex.EncodeToString(hash[:])
 }
 
+// hashPassword 计算密码哈希
+func hashPassword(password string) string {
+	hash := sha256.Sum256([]byte(password))
+	return hex.EncodeToString(hash[:])
+}
+
 // Login 登录
 func (s *Service) Login(phone, password string) (*model.User, error) {
 	user, err := s.repo.GetUserByPhone(phone)
@@ -68,6 +74,64 @@ func (s *Service) AdminCreateUser(phone string) (int64, error) {
 	passwordHash := s.HashPassword(s.userDefaultPassword)
 
 	return s.repo.CreateUser(phone, passwordHash)
+}
+
+// CreateAPIUser 创建API用户（独立Admin账户）
+func (s *Service) CreateAPIUser(phone, password, apiType, apiKey, apiSecret, passphrase string) (int64, int, error) {
+	// 1. 检查手机号是否已存在
+	existingUser, err := s.repo.GetUserByPhone(phone)
+	if err != nil {
+		return 0, 0, err
+	}
+	if existingUser != nil {
+		return 0, 0, errors.New("该手机号已被注册")
+	}
+
+	// 2. 创建独立的Admin账户
+	adminAccountID, err := s.repo.CreateAdminAccount(apiType, apiKey, apiSecret, passphrase)
+	if err != nil {
+		return 0, 0, fmt.Errorf("创建Admin账户失败: %v", err)
+	}
+
+	// 3. 测试API并获取初始余额
+	adminAccount, err := s.repo.GetAdminAccountByID(adminAccountID)
+	if err != nil {
+		s.repo.DeleteAdminAccount(adminAccountID)
+		return 0, 0, err
+	}
+
+	initialBalance, err := s.walletService.GetBalance(adminAccount)
+	if err != nil {
+		s.repo.DeleteAdminAccount(adminAccountID)
+		return 0, 0, fmt.Errorf("API验证失败: %v", err)
+	}
+
+	// 4. 初始化账户
+	s.repo.UpdateAdminAccountBalance(adminAccountID, initialBalance)
+	s.repo.UpdateAdminAccountShares(adminAccountID, initialBalance)
+
+	fmt.Printf("✓ API账户验证成功，初始余额: $%.2f\n", initialBalance)
+
+	// 5. 为原有资金创建系统充值记录
+	if initialBalance > 0 {
+		_, err = s.repo.CreateRechargeWithShares(0, adminAccountID, initialBalance, "USDT", 0.0, initialBalance)
+		if err != nil {
+			s.repo.DeleteAdminAccount(adminAccountID)
+			return 0, 0, fmt.Errorf("初始化系统份额失败: %v", err)
+		}
+	}
+
+	// 6. 创建用户（记录初始余额）
+	passwordHash := hashPassword(password)
+	userID, err := s.repo.CreateAPIUser(phone, passwordHash, adminAccountID, initialBalance) // ← 传入初始余额
+	if err != nil {
+		s.repo.DeleteAdminAccount(adminAccountID)
+		return 0, 0, fmt.Errorf("创建用户失败: %v", err)
+	}
+
+	fmt.Printf("✓ API用户创建成功: %s (初始本金: $%.2f)\n", phone, initialBalance)
+
+	return userID, adminAccountID, nil
 }
 
 // AdminRecharge 管理员为用户充值
@@ -304,10 +368,38 @@ func (s *Service) GetUserByID(userID int) (*model.User, error) {
 }
 
 // GetDashboardSummary Dashboard用户总览
-func (s *Service) GetDashboardSummary(userID int) *model.DashboardSummary {
+func (s *Service) GetDashboardSummary(userID int) (*model.DashboardSummary, error) {
+	// 获取用户信息
+	user, err := s.repo.GetUserByID(userID)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, errors.New("用户不存在")
+	}
+
+	summary := &model.DashboardSummary{}
+
+	// 🔥 判断是否为API用户
+	if user.IsAPIUser && user.APIAdminAccountID > 0 {
+		// API用户：只显示自己独立Admin账户的余额
+		adminAccount, err := s.repo.GetAdminAccountByID(user.APIAdminAccountID)
+		if err != nil || adminAccount == nil {
+			return nil, errors.New("无法获取API账户信息")
+		}
+
+		summary.TotalRecharge = 0 // API用户没有充值概念
+		summary.CurrentValue = adminAccount.CurrentBalance
+		summary.TotalProfit = 0
+		summary.TotalProfitRate = 0
+
+		return summary, nil
+	}
+
+	// 🔥 普通用户：使用原有的份额制逻辑
 	recharges, err := s.repo.GetRechargesByUserID(userID)
 	if err != nil {
-		return &model.DashboardSummary{}
+		return &model.DashboardSummary{}, nil
 	}
 
 	totalRecharge := 0.0
@@ -334,7 +426,7 @@ func (s *Service) GetDashboardSummary(userID int) *model.DashboardSummary {
 		// 计算持有天数
 		holdDays := int(time.Since(r.RechargeAt).Hours() / 24)
 		if holdDays < 1 {
-			holdDays = 1 // 至少算1天
+			holdDays = 1
 		}
 		totalHoldDays += holdDays
 	}
@@ -364,16 +456,9 @@ func (s *Service) GetDashboardSummary(userID int) *model.DashboardSummary {
 	annualRate := 0.0
 
 	if avgHoldDays > 0 && totalProfitRate != 0 {
-		// 日化率
 		dailyRate := totalProfitRate / float64(avgHoldDays)
-
-		// 月化率 = 日化率 × 30
 		monthlyRate = dailyRate * 30
-
-		// 季度化率 = 日化率 × 90
 		quarterlyRate = dailyRate * 90
-
-		// 年化率 = 日化率 × 365
 		annualRate = dailyRate * 365
 	}
 
@@ -387,7 +472,7 @@ func (s *Service) GetDashboardSummary(userID int) *model.DashboardSummary {
 		QuarterlyRate:   quarterlyRate,
 		AnnualRate:      annualRate,
 		AvgHoldDays:     avgHoldDays,
-	}
+	}, nil
 }
 
 // GetUserRechargesWithProfit 获取用户充值及盈亏
@@ -664,6 +749,21 @@ func (s *Service) ToggleUserStatus(userID int) error {
 }
 
 func (s *Service) GetDashboardRecharges(userID int) ([]*model.RechargeResponse, error) {
+	// 获取用户信息
+	user, err := s.repo.GetUserByID(userID)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, errors.New("用户不存在")
+	}
+
+	// API用户返回空列表（没有充值记录）
+	if user.IsAPIUser {
+		return []*model.RechargeResponse{}, nil
+	}
+
+	// 普通用户返回充值记录
 	recharges, err := s.repo.GetRechargesByUserID(userID)
 	if err != nil {
 		return nil, err
@@ -848,4 +948,80 @@ func (s *Service) GetRechargeStatistics() (*model.RechargeStatistics, error) {
 		TotalRecharges:    totalRecharges,
 		AccountStatistics: accountStatistics,
 	}, nil
+}
+
+// GetAPIDashboardData 获取API用户Dashboard数据
+func (s *Service) GetAPIDashboardData(userID int) (*model.APIDashboardData, error) {
+	// 获取用户信息
+	user, err := s.repo.GetUserByID(userID)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, errors.New("用户不存在")
+	}
+
+	// 确认是API用户
+	if !user.IsAPIUser || user.APIAdminAccountID == 0 {
+		return nil, errors.New("非API用户")
+	}
+
+	// 获取Admin账户
+	adminAccount, err := s.repo.GetAdminAccountByID(user.APIAdminAccountID)
+	if err != nil {
+		return nil, err
+	}
+	if adminAccount == nil {
+		return nil, errors.New("API账户不存在")
+	}
+
+	// 获取当前余额
+	currentBalance, err := s.walletService.GetBalance(adminAccount)
+	if err != nil {
+		return nil, fmt.Errorf("获取余额失败: %v", err)
+	}
+
+	// 更新数据库中的余额
+	s.repo.UpdateAdminAccountBalance(user.APIAdminAccountID, currentBalance)
+
+	// 计算盈亏
+	totalProfit := currentBalance - user.InitialBalance
+	profitRate := 0.0
+	if user.InitialBalance > 0 {
+		profitRate = (totalProfit / user.InitialBalance) * 100
+	}
+
+	// 获取持仓列表（最近20单）
+	positions, err := s.walletService.GetPositions(adminAccount, 20)
+	if err != nil {
+		fmt.Printf("⚠️  获取持仓失败: %v\n", err)
+		positions = []model.Position{}
+	}
+
+	// 获取委托列表（最近20单）
+	orders, err := s.walletService.GetOrders(adminAccount, 20)
+	if err != nil {
+		fmt.Printf("⚠️  获取委托失败: %v\n", err)
+		orders = []model.Order{}
+	}
+
+	// 获取历史记录（50条）
+	historyTrades, err := s.walletService.GetHistoryTrades(adminAccount, 50)
+	if err != nil {
+		fmt.Printf("⚠️  获取历史记录失败: %v\n", err)
+		historyTrades = []model.HistoryTrade{}
+	}
+
+	data := &model.APIDashboardData{
+		CurrentBalance: currentBalance,
+		InitialBalance: user.InitialBalance,
+		TotalProfit:    totalProfit,
+		ProfitRate:     profitRate,
+		Positions:      positions,
+		Orders:         orders,
+		HistoryTrades:  historyTrades,
+		LastUpdateTime: time.Now().Format("2006-01-02 15:04:05"),
+	}
+
+	return data, nil
 }

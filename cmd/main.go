@@ -135,13 +135,15 @@ func main() {
 			auth.GET("/dashboard/recharges", h.GetDashboardRecharges)
 			auth.GET("/dashboard/recharge/:id/history", h.GetRechargeHistory)
 			auth.POST("/dashboard/refresh", h.DashboardManualRefresh)
-
+			// API用户Dashboard
+			auth.GET("/dashboard/api", h.GetAPIDashboard) // ← 新增
 			// 管理员接口
 			admin := auth.Group("", h.AdminMiddleware())
 			{
 				// 用户管理
 				admin.POST("/admin/users", h.AdminCreateUser)
 				admin.GET("/admin/users", h.AdminGetUsers)
+				admin.POST("/admin/users/api", h.AdminCreateAPIUser) // ← 新增
 				admin.GET("/admin/users/:id", h.AdminGetUserDetail)
 				admin.PUT("/admin/users/:id/status", h.AdminToggleUserStatus)
 

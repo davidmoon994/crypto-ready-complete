@@ -5,13 +5,17 @@ import (
 )
 
 // User Dashboard用户（虚拟账本容器）
+// User模型添加字段
 type User struct {
-	ID           int       `json:"id"`
-	Phone        string    `json:"phone"`
-	PasswordHash string    `json:"-"`
-	IsAdmin      bool      `json:"is_admin"`
-	CreatedAt    time.Time `json:"created_at"`
-	IsActive     bool      `json:"is_active"`
+	ID                int       `json:"id"`
+	Phone             string    `json:"phone"`
+	PasswordHash      string    `json:"-"`
+	IsAdmin           bool      `json:"is_admin"`
+	IsActive          bool      `json:"is_active"`
+	IsAPIUser         bool      `json:"is_api_user"`
+	APIAdminAccountID int       `json:"api_admin_account_id"`
+	InitialBalance    float64   `json:"initial_balance"` // 新增
+	CreatedAt         time.Time `json:"created_at"`
 }
 
 // AdminAccount Admin绑定的3个真实账户
@@ -194,4 +198,55 @@ type UserSummary struct {
 	CurrentValue  float64 `json:"current_value"`
 	TotalProfit   float64 `json:"total_profit"`
 	RechargeCount int     `json:"recharge_count"`
+}
+
+// API用户Dashboard数据
+type APIDashboardData struct {
+	CurrentBalance float64        `json:"current_balance"`  // 当前总资金
+	InitialBalance float64        `json:"initial_balance"`  // 初始本金
+	TotalProfit    float64        `json:"total_profit"`     // 总盈亏
+	ProfitRate     float64        `json:"profit_rate"`      // 盈亏率
+	Positions      []Position     `json:"positions"`        // 当前持仓
+	Orders         []Order        `json:"orders"`           // 当前委托
+	HistoryTrades  []HistoryTrade `json:"history_trades"`   // 历史记录
+	LastUpdateTime string         `json:"last_update_time"` // 最后更新时间
+}
+
+// 持仓信息
+type Position struct {
+	Symbol            string  `json:"symbol"`              // 交易对
+	Side              string  `json:"side"`                // 方向: "LONG"/"SHORT"
+	Size              float64 `json:"size"`                // 持仓数量
+	EntryPrice        float64 `json:"entry_price"`         // 开仓均价
+	MarkPrice         float64 `json:"mark_price"`          // 标记价格
+	UnrealizedPnl     float64 `json:"unrealized_pnl"`      // 未实现盈亏
+	UnrealizedPnlRate float64 `json:"unrealized_pnl_rate"` // 盈亏率
+	Leverage          int     `json:"leverage"`            // 杠杆倍数
+	MarginType        string  `json:"margin_type"`         // 全仓/逐仓
+}
+
+// 委托信息
+type Order struct {
+	OrderID     string  `json:"order_id"`     // 订单ID
+	Symbol      string  `json:"symbol"`       // 交易对
+	Side        string  `json:"side"`         // 方向: "BUY"/"SELL"
+	Type        string  `json:"type"`         // 类型: "LIMIT"/"MARKET"
+	Price       float64 `json:"price"`        // 委托价格
+	OrigQty     float64 `json:"orig_qty"`     // 原始数量
+	ExecutedQty float64 `json:"executed_qty"` // 已成交数量
+	Status      string  `json:"status"`       // 状态
+	Time        string  `json:"time"`         // 下单时间
+}
+
+// 历史成交
+type HistoryTrade struct {
+	Symbol      string  `json:"symbol"`       // 交易对
+	Side        string  `json:"side"`         // 方向
+	OpenTime    string  `json:"open_time"`    // 开仓时间
+	CloseTime   string  `json:"close_time"`   // 平仓时间
+	OpenPrice   float64 `json:"open_price"`   // 开仓价
+	ClosePrice  float64 `json:"close_price"`  // 平仓价
+	Quantity    float64 `json:"quantity"`     // 数量
+	RealizedPnl float64 `json:"realized_pnl"` // 已实现盈亏
+	Commission  float64 `json:"commission"`   // 手续费
 }

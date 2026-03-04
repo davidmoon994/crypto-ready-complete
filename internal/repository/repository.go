@@ -442,6 +442,41 @@ func (r *Repository) CreateRecharge(recharge *model.Recharge) (int64, error) {
 	return result.LastInsertId()
 }
 
+// CreateAdminAccount 创建新的Admin账户
+func (r *Repository) CreateAdminAccount(accountType, apiKey, apiSecret, passphrase string) (int, error) {
+	result, err := r.db.Exec(
+		`INSERT INTO admin_accounts (account_type, api_key, api_secret, passphrase, wallet_address, current_balance, total_shares, is_active, updated_at)
+		 VALUES (?, ?, ?, ?, '', 0, 0, 1, CURRENT_TIMESTAMP)`,
+		accountType, apiKey, apiSecret, passphrase,
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	id, err := result.LastInsertId()
+	return int(id), err
+}
+
+// DeleteAdminAccount 删除Admin账户（用于回滚）
+func (r *Repository) DeleteAdminAccount(accountID int) error {
+	_, err := r.db.Exec("DELETE FROM admin_accounts WHERE id = ?", accountID)
+	return err
+}
+
+// CreateAPIUser 创建API用户
+// CreateAPIUser 创建API用户（记录初始余额）
+func (r *Repository) CreateAPIUser(phone, passwordHash string, adminAccountID int, initialBalance float64) (int64, error) {
+	result, err := r.db.Exec(
+		`INSERT INTO users (phone, password_hash, is_admin, is_active, is_api_user, api_admin_account_id, initial_balance)
+		 VALUES (?, ?, 0, 1, 1, ?, ?)`,
+		phone, passwordHash, adminAccountID, initialBalance,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
+}
+
 func (r *Repository) GetRechargesByUserID(userID int) ([]*model.Recharge, error) {
 	rows, err := r.db.Query(
 		`SELECT id, user_id, admin_account_id, amount, currency, recharge_at, 
@@ -530,10 +565,27 @@ func (r *Repository) UpdateUserStatus(userID int, isActive bool) error {
 // GetUserByID 获取用户信息（含is_active）
 func (r *Repository) GetUserByID(userID int) (*model.User, error) {
 	user := &model.User{}
-	err := r.db.QueryRow(
-		"SELECT id, phone, password_hash, is_admin, is_active, created_at FROM users WHERE id = ?",
+	err := r.db.QueryRow(`
+		SELECT id, phone, password_hash, is_admin, 
+		       COALESCE(is_active, 1), 
+		       COALESCE(is_api_user, 0), 
+		       COALESCE(api_admin_account_id, 0),
+		       COALESCE(initial_balance, 0),
+		       created_at 
+		FROM users 
+		WHERE id = ?`,
 		userID,
-	).Scan(&user.ID, &user.Phone, &user.PasswordHash, &user.IsAdmin, &user.IsActive, &user.CreatedAt)
+	).Scan(
+		&user.ID,
+		&user.Phone,
+		&user.PasswordHash,
+		&user.IsAdmin,
+		&user.IsActive,
+		&user.IsAPIUser,         // 必须有
+		&user.APIAdminAccountID, // 必须有
+		&user.InitialBalance,    // 必须有
+		&user.CreatedAt,
+	)
 
 	if err == sql.ErrNoRows {
 		return nil, nil

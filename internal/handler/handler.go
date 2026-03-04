@@ -260,9 +260,20 @@ func (h *Handler) AdminManualCheck(c *gin.Context) {
 
 // GetDashboardSummary 获取Dashboard总览
 func (h *Handler) GetDashboardSummary(c *gin.Context) {
-	user := c.MustGet("user").(*model.User)
+	userIDStr, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
+		return
+	}
 
-	summary := h.service.GetDashboardSummary(user.ID)
+	userID := userIDStr.(int)
+
+	summary, err := h.service.GetDashboardSummary(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
 	c.JSON(http.StatusOK, summary)
 }
 
@@ -335,4 +346,69 @@ func (h *Handler) AdminGetRechargeStats(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, stats)
+}
+
+// AdminCreateAPIUser 通过API创建独立的Dashboard用户
+func (h *Handler) AdminCreateAPIUser(c *gin.Context) {
+	var req struct {
+		Phone      string `json:"phone" binding:"required"`
+		Password   string `json:"password" binding:"required"`
+		APIType    string `json:"api_type" binding:"required"` // "Binance" 或 "OKX"
+		APIKey     string `json:"api_key" binding:"required"`
+		APISecret  string `json:"api_secret" binding:"required"`
+		Passphrase string `json:"passphrase"` // OKX需要
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误: " + err.Error()})
+		return
+	}
+
+	// 验证API类型
+	if req.APIType != "Binance" && req.APIType != "OKX" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "API类型只能是 Binance 或 OKX"})
+		return
+	}
+
+	// OKX必须提供Passphrase
+	if req.APIType == "OKX" && req.Passphrase == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "OKX账户必须提供Passphrase"})
+		return
+	}
+
+	// 创建API用户
+	userID, adminAccountID, err := h.service.CreateAPIUser(
+		req.Phone,
+		req.Password,
+		req.APIType,
+		req.APIKey,
+		req.APISecret,
+		req.Passphrase,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":          "API用户创建成功",
+		"user_id":          userID,
+		"admin_account_id": adminAccountID,
+		"login_username":   req.Phone,
+		"dashboard_url":    "/dashboard",
+	})
+}
+
+// GetAPIDashboard 获取API用户Dashboard
+func (h *Handler) GetAPIDashboard(c *gin.Context) {
+	userIDStr, _ := c.Get("userID")
+	userID := userIDStr.(int)
+
+	data, err := h.service.GetAPIDashboardData(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, data)
 }

@@ -11,6 +11,7 @@ import (
 	"math/big" // 添加这行
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -520,4 +521,581 @@ func (ws *WalletService) getERC20Balance(walletAddress, contractAddress, apiKey 
 
 	floatBalance, _ := balanceFloat.Float64()
 	return floatBalance, nil
+}
+
+// GetPositions 获取持仓列表
+func (ws *WalletService) GetPositions(account *model.AdminAccount, limit int) ([]model.Position, error) {
+	switch account.AccountType {
+	case "Binance":
+		return ws.getBinancePositions(account, limit)
+	case "OKX":
+		return ws.getOKXPositions(account, limit)
+	default:
+		return []model.Position{}, nil
+	}
+}
+
+// GetOrders 获取当前委托
+func (ws *WalletService) GetOrders(account *model.AdminAccount, limit int) ([]model.Order, error) {
+	switch account.AccountType {
+	case "Binance":
+		return ws.getBinanceOrders(account, limit)
+	case "OKX":
+		return ws.getOKXOrders(account, limit)
+	default:
+		return []model.Order{}, nil
+	}
+}
+
+// GetHistoryTrades 获取历史成交
+func (ws *WalletService) GetHistoryTrades(account *model.AdminAccount, limit int) ([]model.HistoryTrade, error) {
+	switch account.AccountType {
+	case "Binance":
+		return ws.getBinanceHistoryTrades(account, limit)
+	case "OKX":
+		return ws.getOKXHistoryTrades(account, limit)
+	default:
+		return []model.HistoryTrade{}, nil
+	}
+}
+
+// getBinancePositions 获取Binance持仓
+func (ws *WalletService) getBinancePositions(account *model.AdminAccount, limit int) ([]model.Position, error) {
+	timestamp := fmt.Sprintf("%d", time.Now().UnixNano()/1000000)
+	queryString := fmt.Sprintf("timestamp=%s", timestamp)
+	signature := ws.binanceSign(queryString, account.APISecret)
+
+	url := "https://fapi.binance.com/fapi/v2/positionRisk?" + queryString + "&signature=" + signature
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("X-MBX-APIKEY", account.APIKey)
+
+	resp, err := ws.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("API返回错误 [%d]: %s", resp.StatusCode, string(body))
+	}
+
+	var result []struct {
+		Symbol           string `json:"symbol"`
+		PositionAmt      string `json:"positionAmt"`
+		EntryPrice       string `json:"entryPrice"`
+		MarkPrice        string `json:"markPrice"`
+		UnRealizedProfit string `json:"unRealizedProfit"`
+		Leverage         string `json:"leverage"`
+		MarginType       string `json:"marginType"`
+		PositionSide     string `json:"positionSide"`
+	}
+
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, err
+	}
+
+	positions := []model.Position{}
+	count := 0
+
+	for _, pos := range result {
+		posAmt, _ := strconv.ParseFloat(pos.PositionAmt, 64)
+
+		// 跳过空仓
+		if posAmt == 0 {
+			continue
+		}
+
+		if count >= limit {
+			break
+		}
+
+		entryPrice, _ := strconv.ParseFloat(pos.EntryPrice, 64)
+		markPrice, _ := strconv.ParseFloat(pos.MarkPrice, 64)
+		unrealizedPnl, _ := strconv.ParseFloat(pos.UnRealizedProfit, 64)
+		leverage, _ := strconv.Atoi(pos.Leverage)
+
+		side := "LONG"
+		if posAmt < 0 {
+			side = "SHORT"
+			posAmt = -posAmt
+		}
+
+		pnlRate := 0.0
+		if entryPrice > 0 {
+			pnlRate = (unrealizedPnl / (posAmt * entryPrice)) * 100
+		}
+
+		positions = append(positions, model.Position{
+			Symbol:            pos.Symbol,
+			Side:              side,
+			Size:              posAmt,
+			EntryPrice:        entryPrice,
+			MarkPrice:         markPrice,
+			UnrealizedPnl:     unrealizedPnl,
+			UnrealizedPnlRate: pnlRate,
+			Leverage:          leverage,
+			MarginType:        pos.MarginType,
+		})
+
+		count++
+	}
+
+	return positions, nil
+}
+
+// getBinanceOrders 获取Binance当前委托
+func (ws *WalletService) getBinanceOrders(account *model.AdminAccount, limit int) ([]model.Order, error) {
+	timestamp := fmt.Sprintf("%d", time.Now().UnixNano()/1000000)
+	queryString := fmt.Sprintf("timestamp=%s", timestamp)
+	signature := ws.binanceSign(queryString, account.APISecret)
+
+	url := "https://fapi.binance.com/fapi/v1/openOrders?" + queryString + "&signature=" + signature
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("X-MBX-APIKEY", account.APIKey)
+
+	resp, err := ws.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("API返回错误 [%d]: %s", resp.StatusCode, string(body))
+	}
+
+	var result []struct {
+		OrderID     int64  `json:"orderId"`
+		Symbol      string `json:"symbol"`
+		Side        string `json:"side"`
+		Type        string `json:"type"`
+		Price       string `json:"price"`
+		OrigQty     string `json:"origQty"`
+		ExecutedQty string `json:"executedQty"`
+		Status      string `json:"status"`
+		Time        int64  `json:"time"`
+	}
+
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, err
+	}
+
+	orders := []model.Order{}
+	count := 0
+
+	for _, ord := range result {
+		if count >= limit {
+			break
+		}
+
+		price, _ := strconv.ParseFloat(ord.Price, 64)
+		origQty, _ := strconv.ParseFloat(ord.OrigQty, 64)
+		executedQty, _ := strconv.ParseFloat(ord.ExecutedQty, 64)
+
+		orders = append(orders, model.Order{
+			OrderID:     fmt.Sprintf("%d", ord.OrderID),
+			Symbol:      ord.Symbol,
+			Side:        ord.Side,
+			Type:        ord.Type,
+			Price:       price,
+			OrigQty:     origQty,
+			ExecutedQty: executedQty,
+			Status:      ord.Status,
+			Time:        time.Unix(ord.Time/1000, 0).Format("2006-01-02 15:04:05"),
+		})
+
+		count++
+	}
+
+	return orders, nil
+}
+
+// getBinanceHistoryTrades 获取Binance历史成交
+func (ws *WalletService) getBinanceHistoryTrades(account *model.AdminAccount, limit int) ([]model.HistoryTrade, error) {
+	timestamp := fmt.Sprintf("%d", time.Now().UnixNano()/1000000)
+	queryString := fmt.Sprintf("timestamp=%s&limit=%d", timestamp, limit)
+	signature := ws.binanceSign(queryString, account.APISecret)
+
+	url := "https://fapi.binance.com/fapi/v1/userTrades?" + queryString + "&signature=" + signature
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("X-MBX-APIKEY", account.APIKey)
+
+	resp, err := ws.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("API返回错误 [%d]: %s", resp.StatusCode, string(body))
+	}
+
+	var result []struct {
+		Symbol      string `json:"symbol"`
+		Side        string `json:"side"`
+		Price       string `json:"price"`
+		Qty         string `json:"qty"`
+		RealizedPnl string `json:"realizedPnl"`
+		Commission  string `json:"commission"`
+		Time        int64  `json:"time"`
+	}
+
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, err
+	}
+
+	trades := []model.HistoryTrade{}
+
+	for _, trade := range result {
+		price, _ := strconv.ParseFloat(trade.Price, 64)
+		qty, _ := strconv.ParseFloat(trade.Qty, 64)
+		pnl, _ := strconv.ParseFloat(trade.RealizedPnl, 64)
+		commission, _ := strconv.ParseFloat(trade.Commission, 64)
+
+		tradeTime := time.Unix(trade.Time/1000, 0).Format("2006-01-02 15:04:05")
+
+		trades = append(trades, model.HistoryTrade{
+			Symbol:      trade.Symbol,
+			Side:        trade.Side,
+			OpenTime:    tradeTime,
+			CloseTime:   tradeTime,
+			OpenPrice:   price,
+			ClosePrice:  price,
+			Quantity:    qty,
+			RealizedPnl: pnl,
+			Commission:  commission,
+		})
+	}
+
+	return trades, nil
+}
+
+// getOKXPositions 获取OKX持仓
+func (ws *WalletService) getOKXPositions(account *model.AdminAccount, limit int) ([]model.Position, error) {
+	timestamp := time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
+	method := "GET"
+	requestPath := "/api/v5/account/positions"
+	body := ""
+
+	message := timestamp + method + requestPath + body
+	signature := ws.okxSign(message, account.APISecret)
+
+	url := "https://www.okx.com" + requestPath
+
+	req, err := http.NewRequest(method, url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("OK-ACCESS-KEY", account.APIKey)
+	req.Header.Set("OK-ACCESS-SIGN", signature)
+	req.Header.Set("OK-ACCESS-TIMESTAMP", timestamp)
+	req.Header.Set("OK-ACCESS-PASSPHRASE", account.Passphrase)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := ws.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("API返回错误 [%d]: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result struct {
+		Code string `json:"code"`
+		Msg  string `json:"msg"`
+		Data []struct {
+			InstID   string `json:"instId"`   // 产品ID
+			PosSide  string `json:"posSide"`  // 持仓方向
+			Pos      string `json:"pos"`      // 持仓数量
+			AvgPx    string `json:"avgPx"`    // 开仓均价
+			MarkPx   string `json:"markPx"`   // 标记价格
+			Upl      string `json:"upl"`      // 未实现盈亏
+			UplRatio string `json:"uplRatio"` // 未实现盈亏比率
+			Lever    string `json:"lever"`    // 杠杆倍数
+			MgnMode  string `json:"mgnMode"`  // 保证金模式
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, err
+	}
+
+	if result.Code != "0" {
+		return nil, fmt.Errorf("OKX API错误 [%s]: %s", result.Code, result.Msg)
+	}
+
+	positions := []model.Position{}
+	count := 0
+
+	for _, pos := range result.Data {
+		posSize, _ := strconv.ParseFloat(pos.Pos, 64)
+
+		// 跳过空仓
+		if posSize == 0 {
+			continue
+		}
+
+		if count >= limit {
+			break
+		}
+
+		avgPx, _ := strconv.ParseFloat(pos.AvgPx, 64)
+		markPx, _ := strconv.ParseFloat(pos.MarkPx, 64)
+		upl, _ := strconv.ParseFloat(pos.Upl, 64)
+		uplRatio, _ := strconv.ParseFloat(pos.UplRatio, 64)
+		lever, _ := strconv.Atoi(pos.Lever)
+
+		side := "LONG"
+		if pos.PosSide == "short" {
+			side = "SHORT"
+		}
+
+		marginType := "cross"
+		if pos.MgnMode == "isolated" {
+			marginType = "isolated"
+		}
+
+		positions = append(positions, model.Position{
+			Symbol:            pos.InstID,
+			Side:              side,
+			Size:              posSize,
+			EntryPrice:        avgPx,
+			MarkPrice:         markPx,
+			UnrealizedPnl:     upl,
+			UnrealizedPnlRate: uplRatio * 100, // 转换为百分比
+			Leverage:          lever,
+			MarginType:        marginType,
+		})
+
+		count++
+	}
+
+	return positions, nil
+}
+
+// getOKXOrders 获取OKX当前委托
+func (ws *WalletService) getOKXOrders(account *model.AdminAccount, limit int) ([]model.Order, error) {
+	timestamp := time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
+	method := "GET"
+	requestPath := "/api/v5/trade/orders-pending"
+	body := ""
+
+	message := timestamp + method + requestPath + body
+	signature := ws.okxSign(message, account.APISecret)
+
+	url := "https://www.okx.com" + requestPath
+
+	req, err := http.NewRequest(method, url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("OK-ACCESS-KEY", account.APIKey)
+	req.Header.Set("OK-ACCESS-SIGN", signature)
+	req.Header.Set("OK-ACCESS-TIMESTAMP", timestamp)
+	req.Header.Set("OK-ACCESS-PASSPHRASE", account.Passphrase)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := ws.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("API返回错误 [%d]: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result struct {
+		Code string `json:"code"`
+		Msg  string `json:"msg"`
+		Data []struct {
+			OrdID     string `json:"ordId"`     // 订单ID
+			InstID    string `json:"instId"`    // 产品ID
+			Side      string `json:"side"`      // 订单方向
+			OrdType   string `json:"ordType"`   // 订单类型
+			Px        string `json:"px"`        // 委托价格
+			Sz        string `json:"sz"`        // 委托数量
+			AccFillSz string `json:"accFillSz"` // 已成交数量
+			State     string `json:"state"`     // 订单状态
+			CTime     string `json:"cTime"`     // 创建时间
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, err
+	}
+
+	if result.Code != "0" {
+		return nil, fmt.Errorf("OKX API错误 [%s]: %s", result.Code, result.Msg)
+	}
+
+	orders := []model.Order{}
+	count := 0
+
+	for _, ord := range result.Data {
+		if count >= limit {
+			break
+		}
+
+		px, _ := strconv.ParseFloat(ord.Px, 64)
+		sz, _ := strconv.ParseFloat(ord.Sz, 64)
+		accFillSz, _ := strconv.ParseFloat(ord.AccFillSz, 64)
+
+		// 转换时间戳
+		cTimeInt, _ := strconv.ParseInt(ord.CTime, 10, 64)
+		orderTime := time.Unix(cTimeInt/1000, 0).Format("2006-01-02 15:04:05")
+
+		orders = append(orders, model.Order{
+			OrderID:     ord.OrdID,
+			Symbol:      ord.InstID,
+			Side:        strings.ToUpper(ord.Side),
+			Type:        strings.ToUpper(ord.OrdType),
+			Price:       px,
+			OrigQty:     sz,
+			ExecutedQty: accFillSz,
+			Status:      ord.State,
+			Time:        orderTime,
+		})
+
+		count++
+	}
+
+	return orders, nil
+}
+
+// getOKXHistoryTrades 获取OKX历史成交
+func (ws *WalletService) getOKXHistoryTrades(account *model.AdminAccount, limit int) ([]model.HistoryTrade, error) {
+	timestamp := time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
+	method := "GET"
+	requestPath := fmt.Sprintf("/api/v5/trade/orders-history?limit=%d", limit)
+	body := ""
+
+	message := timestamp + method + requestPath + body
+	signature := ws.okxSign(message, account.APISecret)
+
+	url := "https://www.okx.com" + requestPath
+
+	req, err := http.NewRequest(method, url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("OK-ACCESS-KEY", account.APIKey)
+	req.Header.Set("OK-ACCESS-SIGN", signature)
+	req.Header.Set("OK-ACCESS-TIMESTAMP", timestamp)
+	req.Header.Set("OK-ACCESS-PASSPHRASE", account.Passphrase)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := ws.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("API返回错误 [%d]: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result struct {
+		Code string `json:"code"`
+		Msg  string `json:"msg"`
+		Data []struct {
+			InstID string `json:"instId"` // 产品ID
+			Side   string `json:"side"`   // 订单方向
+			Px     string `json:"px"`     // 委托价格
+			AvgPx  string `json:"avgPx"`  // 成交均价
+			Sz     string `json:"sz"`     // 委托数量
+			Pnl    string `json:"pnl"`    // 收益
+			Fee    string `json:"fee"`    // 手续费
+			CTime  string `json:"cTime"`  // 创建时间
+			UTime  string `json:"uTime"`  // 更新时间
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, err
+	}
+
+	if result.Code != "0" {
+		return nil, fmt.Errorf("OKX API错误 [%s]: %s", result.Code, result.Msg)
+	}
+
+	trades := []model.HistoryTrade{}
+
+	for _, trade := range result.Data {
+		px, _ := strconv.ParseFloat(trade.Px, 64)
+		avgPx, _ := strconv.ParseFloat(trade.AvgPx, 64)
+		sz, _ := strconv.ParseFloat(trade.Sz, 64)
+		pnl, _ := strconv.ParseFloat(trade.Pnl, 64)
+		fee, _ := strconv.ParseFloat(trade.Fee, 64)
+
+		// 转换时间戳
+		cTimeInt, _ := strconv.ParseInt(trade.CTime, 10, 64)
+		uTimeInt, _ := strconv.ParseInt(trade.UTime, 10, 64)
+
+		openTime := time.Unix(cTimeInt/1000, 0).Format("2006-01-02 15:04:05")
+		closeTime := time.Unix(uTimeInt/1000, 0).Format("2006-01-02 15:04:05")
+
+		trades = append(trades, model.HistoryTrade{
+			Symbol:      trade.InstID,
+			Side:        strings.ToUpper(trade.Side),
+			OpenTime:    openTime,
+			CloseTime:   closeTime,
+			OpenPrice:   px,
+			ClosePrice:  avgPx,
+			Quantity:    sz,
+			RealizedPnl: pnl,
+			Commission:  fee,
+		})
+	}
+
+	return trades, nil
 }

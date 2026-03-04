@@ -192,6 +192,83 @@
             overflow-y: auto;
         }
     
+/* API Dashboard样式 */
+.badge {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    display: inline-block;
+}
+
+.badge.long {
+    background: #d4edda;
+    color: #155724;
+}
+
+.badge.short {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+/* 移动端响应式 */
+@media (max-width: 768px) {
+    .desktop-table {
+        display: none;
+    }
+    
+    .mobile-cards {
+        display: block;
+    }
+}
+
+@media (min-width: 769px) {
+    .desktop-table {
+        display: table;
+        width: 100%;
+    }
+    
+    .mobile-cards {
+        display: none;
+    }
+}
+
+.mobile-cards {
+    display: none;
+}
+
+.mobile-card {
+    background: white;
+    border-radius: 10px;
+    padding: 15px;
+    margin-bottom: 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.mobile-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.mobile-card-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    font-size: 14px;
+}
+
+.mobile-card-label {
+    color: #666;
+}
+
+.mobile-card-value {
+    font-weight: 600;
+}
+
         /* 说明框 */
         .info-box {
             background: #fff3cd;
@@ -486,265 +563,596 @@
     </div>
 </div>
 
-    <script>
-        const API_URL = window.location.origin + '/api';
-        let authHeader = '';
-        
-        function checkAuth() {
-    const phone = localStorage.getItem('phone');
-    const password = localStorage.getItem('password');
-    const isActive = localStorage.getItem('isActive');
+<script>
+    const API_URL = window.location.origin + '/api';
+    let authHeader = '';
     
-    if (!phone || !password) {
-        window.location.href = '/';
-        return false;
+    // 检查认证
+    function checkAuth() {
+        const phone = localStorage.getItem('phone');
+        const password = localStorage.getItem('password');
+        const isActive = localStorage.getItem('isActive');
+        
+        if (!phone || !password) {
+            window.location.href = '/';
+            return false;
+        }
+        
+        authHeader = 'Basic ' + btoa(phone + ':' + password);
+        
+        const userPhoneEl = document.getElementById('userPhone');
+        if (userPhoneEl) {
+            userPhoneEl.textContent = phone;
+        }
+        
+        // 显示账户状态
+        const statusEl = document.getElementById('userStatus');
+        if (statusEl && isActive === 'false') {
+            statusEl.innerHTML = '<span style="background: #ef4444; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px;">⚠️ 账户已停用</span>';
+        }
+        
+        return true;
     }
     
-    authHeader = 'Basic ' + btoa(phone + ':' + password);
-    document.getElementById('userPhone').textContent = phone;
-    
-    // 显示账户状态
-    if (isActive === 'false') {
-        document.getElementById('userStatus').innerHTML = 
-            '<span style="background: #ef4444; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px;">账户已停用</span>';
-    }
-    
-    return true;
-}
-        
-        async function loadSummary() {
-    const response = await fetch(`${API_URL}/dashboard/summary`, { 
-        headers: { 'Authorization': authHeader } 
-    });
-    
-    if (response.ok) {
-        const data = await response.json();
-        
-        // 原有的4个卡片
-        document.getElementById('totalRecharge').textContent = '$' + data.total_recharge.toFixed(2);
-        document.getElementById('currentValue').textContent = '$' + data.current_value.toFixed(2);
-        
-        const profit = document.getElementById('totalProfit');
-        profit.textContent = (data.total_profit >= 0 ? '+' : '') + '$' + data.total_profit.toFixed(2);
-        profit.className = 'value ' + (data.total_profit >= 0 ? 'positive' : 'negative');
-        
-        const rate = document.getElementById('profitRate');
-        rate.textContent = (data.total_profit_rate >= 0 ? '+' : '') + data.total_profit_rate.toFixed(2) + '%';
-        rate.className = 'value ' + (data.total_profit_rate >= 0 ? 'positive' : 'negative');
-        
-        // 新增：化率显示
-        const monthlyRate = document.getElementById('monthlyRate');
-        monthlyRate.textContent = (data.monthly_rate >= 0 ? '+' : '') + data.monthly_rate.toFixed(2) + '%';
-        
-        const quarterlyRate = document.getElementById('quarterlyRate');
-        quarterlyRate.textContent = (data.quarterly_rate >= 0 ? '+' : '') + data.quarterly_rate.toFixed(2) + '%';
-        
-        const annualRate = document.getElementById('annualRate');
-        annualRate.textContent = (data.annual_rate >= 0 ? '+' : '') + data.annual_rate.toFixed(2) + '%';
-        
-        document.getElementById('avgHoldDays').textContent = data.avg_hold_days + '天';
-    }
-}
-        
-async function loadRecharges() {
-    const tbody = document.getElementById('rechargesBody');
-    
-    if (!tbody) {
-        console.error('rechargesBody 元素不存在');
-        return;
-    }
-    
-    try {
-        const response = await fetch(`${API_URL}/dashboard/recharges`, { 
+    // ========== 普通用户Dashboard函数 ==========
+    async function loadSummary() {
+        const response = await fetch(`${API_URL}/dashboard/summary`, { 
             headers: { 'Authorization': authHeader } 
         });
         
-        if (!response.ok) {
-            tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #ef4444;">加载失败</td></tr>';
-            return;
-        }
-        
-        const data = await response.json();
-        console.log('充值记录原始数据:', data);
-        
-        if (!data.recharges || data.recharges.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #999;">暂无充值记录</td></tr>';
-            return;
-        }
-        
-        const isMobile = window.innerWidth <= 768;
-        
-        // 处理每条记录
-        const records = data.recharges.map(item => {
-            // 兼容两种数据结构
-            const r = item.recharge || item;
+        if (response.ok) {
+            const data = await response.json();
             
-            const id = r.id;
-            const amount = r.amount || 0;
-            const currency = r.currency || 'USDT';
-            const accountType = item.account_type || '未知';
-            const currentProfit = item.current_profit || 0;
-            const currentRate = item.current_rate || 0;
+            // 原有的4个卡片
+            document.getElementById('totalRecharge').textContent = '$' + data.total_recharge.toFixed(2);
+            document.getElementById('currentValue').textContent = '$' + data.current_value.toFixed(2);
             
-            // 日期解析
-            let rechargeDate = '未知';
-            if (r.recharge_at) {
-                try {
-                    const date = new Date(r.recharge_at);
-                    rechargeDate = date.toLocaleDateString('zh-CN');
-                } catch (e) {
-                    console.error('日期解析错误:', e);
-                }
+            const profit = document.getElementById('totalProfit');
+            profit.textContent = (data.total_profit >= 0 ? '+' : '') + '$' + data.total_profit.toFixed(2);
+            profit.className = 'value ' + (data.total_profit >= 0 ? 'positive' : 'negative');
+            
+            const rate = document.getElementById('profitRate');
+            rate.textContent = (data.total_profit_rate >= 0 ? '+' : '') + data.total_profit_rate.toFixed(2) + '%';
+            rate.className = 'value ' + (data.total_profit_rate >= 0 ? 'positive' : 'negative');
+            
+            // 新增：化率显示
+            const monthlyRate = document.getElementById('monthlyRate');
+            if (monthlyRate) {
+                monthlyRate.textContent = (data.monthly_rate >= 0 ? '+' : '') + data.monthly_rate.toFixed(2) + '%';
             }
             
-            return { id, amount, currency, accountType, rechargeDate, currentProfit, currentRate };
-        });
-        
-        if (isMobile) {
-            // 移动端卡片布局
-            tbody.innerHTML = records.map(r => `
-                <tr>
-                    <td colspan="7">
-                        <div class="recharge-card">
-                            <div class="recharge-card-row">
-                                <span class="recharge-card-label">时间</span>
-                                <span class="recharge-card-value">${r.rechargeDate}</span>
-                            </div>
-                            <div class="recharge-card-row">
-                                <span class="recharge-card-label">金额</span>
-                                <span class="recharge-card-value">$${r.amount.toFixed(2)} ${r.currency}</span>
-                            </div>
-                            <div class="recharge-card-row">
-                                <span class="recharge-card-label">充值到</span>
-                                <span class="recharge-card-value">${r.accountType}</span>
-                            </div>
-                            <div class="recharge-card-row">
-                                <span class="recharge-card-label">当前盈亏</span>
-                                <span class="recharge-card-value" style="color: ${r.currentProfit >= 0 ? '#10b981' : '#ef4444'}">
-                                    ${r.currentProfit >= 0 ? '+' : ''}$${r.currentProfit.toFixed(2)}
-                                </span>
-                            </div>
-                            <div class="recharge-card-row">
-                                <span class="recharge-card-label">盈亏率</span>
-                                <span class="recharge-card-value" style="color: ${r.currentRate >= 0 ? '#10b981' : '#ef4444'}">
-                                    ${r.currentRate >= 0 ? '+' : ''}${r.currentRate.toFixed(2)}%
-                                </span>
-                            </div>
-                            <div class="recharge-card-row">
-                                <button class="btn" onclick="viewHistory(${r.id})" style="width: 100%; font-size: 13px;">查看历史</button>
-                            </div>
-                        </div>
-                    </td>
-                </tr>
-            `).join('');
-        } else {
-            // 桌面端表格布局
-            tbody.innerHTML = records.map(r => `
-                <tr>
-                    <td>${r.rechargeDate}</td>
-                    <td>$${r.amount.toFixed(2)}</td>
-                    <td>${r.currency}</td>
-                    <td>${r.accountType}</td>
-                    <td style="color: ${r.currentProfit >= 0 ? '#10b981' : '#ef4444'}">
-                        ${r.currentProfit >= 0 ? '+' : ''}$${r.currentProfit.toFixed(2)}
-                    </td>
-                    <td style="color: ${r.currentRate >= 0 ? '#10b981' : '#ef4444'}">
-                        ${r.currentRate >= 0 ? '+' : ''}${r.currentRate.toFixed(2)}%
-                    </td>
-                    <td><button class="btn" onclick="viewHistory(${r.id})">查看历史</button></td>
-                </tr>
-            `).join('');
+            const quarterlyRate = document.getElementById('quarterlyRate');
+            if (quarterlyRate) {
+                quarterlyRate.textContent = (data.quarterly_rate >= 0 ? '+' : '') + data.quarterly_rate.toFixed(2) + '%';
+            }
+            
+            const annualRate = document.getElementById('annualRate');
+            if (annualRate) {
+                annualRate.textContent = (data.annual_rate >= 0 ? '+' : '') + data.annual_rate.toFixed(2) + '%';
+            }
+            
+            const avgHoldDays = document.getElementById('avgHoldDays');
+            if (avgHoldDays) {
+                avgHoldDays.textContent = data.avg_hold_days + '天';
+            }
         }
-    } catch (error) {
-        console.error('加载充值记录失败：', error);
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #ef4444;">加载失败</td></tr>';
     }
-}
-        async function viewHistory(rechargeId, accountType, amount) {
-            document.getElementById('historyTitle').textContent = `充值历史 - ${accountType} $${amount}`;
-            document.getElementById('historyModal').classList.add('active');
-            const response = await fetch(`${API_URL}/dashboard/recharge/${rechargeId}/history`, { headers: { 'Authorization': authHeader } });
-            if (response.ok) {
-                const data = await response.json();
-                const tbody = document.getElementById('historyBody');
-                if (!data.history || data.history.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px;">暂无历史数据</td></tr>';
-                    return;
+    
+    async function loadRecharges() {
+        const tbody = document.getElementById('rechargesBody');
+        
+        if (!tbody) {
+            console.error('rechargesBody 元素不存在');
+            return;
+        }
+        
+        try {
+            const response = await fetch(`${API_URL}/dashboard/recharges`, { 
+                headers: { 'Authorization': authHeader } 
+            });
+            
+            if (!response.ok) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #ef4444;">加载失败</td></tr>';
+                return;
+            }
+            
+            const data = await response.json();
+            console.log('充值记录原始数据:', data);
+            
+            if (!data.recharges || data.recharges.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #999;">暂无充值记录</td></tr>';
+                return;
+            }
+            
+            const isMobile = window.innerWidth <= 768;
+            
+            // 处理每条记录
+            const records = data.recharges.map(item => {
+                // 兼容两种数据结构
+                const r = item.recharge || item;
+                
+                const id = r.id;
+                const amount = r.amount || 0;
+                const currency = r.currency || 'USDT';
+                const accountType = item.account_type || '未知';
+                const currentProfit = item.current_profit || 0;
+                const currentRate = item.current_rate || 0;
+                
+                // 日期解析
+                let rechargeDate = '未知';
+                if (r.recharge_at) {
+                    try {
+                        const date = new Date(r.recharge_at);
+                        rechargeDate = date.toLocaleDateString('zh-CN');
+                    } catch (e) {
+                        console.error('日期解析错误:', e);
+                    }
                 }
-                tbody.innerHTML = data.history.map(h => `
+                
+                return { id, amount, currency, accountType, rechargeDate, currentProfit, currentRate };
+            });
+            
+            if (isMobile) {
+                // 移动端卡片布局
+                tbody.innerHTML = records.map(r => `
                     <tr>
-                        <td>${h.record_date}</td>
-                        <td>$${h.admin_account_balance.toFixed(2)}</td>
-                        <td style="color: ${h.profit >= 0 ? '#10b981' : '#ef4444'}">
-                            ${h.profit >= 0 ? '+' : ''}$${h.profit.toFixed(2)}
-                        </td>
-                        <td style="color: ${h.profit_rate >= 0 ? '#10b981' : '#ef4444'}">
-                            ${h.profit_rate >= 0 ? '+' : ''}${h.profit_rate.toFixed(2)}%
+                        <td colspan="7">
+                            <div class="recharge-card">
+                                <div class="recharge-card-row">
+                                    <span class="recharge-card-label">时间</span>
+                                    <span class="recharge-card-value">${r.rechargeDate}</span>
+                                </div>
+                                <div class="recharge-card-row">
+                                    <span class="recharge-card-label">金额</span>
+                                    <span class="recharge-card-value">$${r.amount.toFixed(2)} ${r.currency}</span>
+                                </div>
+                                <div class="recharge-card-row">
+                                    <span class="recharge-card-label">充值到</span>
+                                    <span class="recharge-card-value">${r.accountType}</span>
+                                </div>
+                                <div class="recharge-card-row">
+                                    <span class="recharge-card-label">当前盈亏</span>
+                                    <span class="recharge-card-value" style="color: ${r.currentProfit >= 0 ? '#10b981' : '#ef4444'}">
+                                        ${r.currentProfit >= 0 ? '+' : ''}$${r.currentProfit.toFixed(2)}
+                                    </span>
+                                </div>
+                                <div class="recharge-card-row">
+                                    <span class="recharge-card-label">盈亏率</span>
+                                    <span class="recharge-card-value" style="color: ${r.currentRate >= 0 ? '#10b981' : '#ef4444'}">
+                                        ${r.currentRate >= 0 ? '+' : ''}${r.currentRate.toFixed(2)}%
+                                    </span>
+                                </div>
+                                <div class="recharge-card-row">
+                                    <button class="btn" onclick="viewHistory(${r.id})" style="width: 100%; font-size: 13px;">查看历史</button>
+                                </div>
+                            </div>
                         </td>
                     </tr>
                 `).join('');
+            } else {
+                // 桌面端表格布局
+                tbody.innerHTML = records.map(r => `
+                    <tr>
+                        <td>${r.rechargeDate}</td>
+                        <td>$${r.amount.toFixed(2)}</td>
+                        <td>${r.currency}</td>
+                        <td>${r.accountType}</td>
+                        <td style="color: ${r.currentProfit >= 0 ? '#10b981' : '#ef4444'}">
+                            ${r.currentProfit >= 0 ? '+' : ''}$${r.currentProfit.toFixed(2)}
+                        </td>
+                        <td style="color: ${r.currentRate >= 0 ? '#10b981' : '#ef4444'}">
+                            ${r.currentRate >= 0 ? '+' : ''}${r.currentRate.toFixed(2)}%
+                        </td>
+                        <td><button class="btn" onclick="viewHistory(${r.id})">查看历史</button></td>
+                    </tr>
+                `).join('');
+            }
+        } catch (error) {
+            console.error('加载充值记录失败：', error);
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #ef4444;">加载失败</td></tr>';
+        }
+    }
+    
+    async function viewHistory(rechargeId) {
+        document.getElementById('historyModal').classList.add('active');
+        const response = await fetch(`${API_URL}/dashboard/recharge/${rechargeId}/history`, { 
+            headers: { 'Authorization': authHeader } 
+        });
+        if (response.ok) {
+            const data = await response.json();
+            const tbody = document.getElementById('historyBody');
+            if (!data.history || data.history.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px;">暂无历史数据</td></tr>';
+                return;
+            }
+            tbody.innerHTML = data.history.map(h => `
+                <tr>
+                    <td>${h.record_date}</td>
+                    <td>$${h.admin_account_balance.toFixed(2)}</td>
+                    <td style="color: ${h.profit >= 0 ? '#10b981' : '#ef4444'}">
+                        ${h.profit >= 0 ? '+' : ''}$${h.profit.toFixed(2)}
+                    </td>
+                    <td style="color: ${h.profit_rate >= 0 ? '#10b981' : '#ef4444'}">
+                        ${h.profit_rate >= 0 ? '+' : ''}${h.profit_rate.toFixed(2)}%
+                    </td>
+                </tr>
+            `).join('');
+        }
+    }
+    
+    function closeHistoryModal() { 
+        document.getElementById('historyModal').classList.remove('active'); 
+    }
+    
+    async function refresh() {
+        await fetch(`${API_URL}/dashboard/refresh`, {
+            method: 'POST',
+            headers: { 'Authorization': authHeader }
+        });
+        loadSummary();
+        loadRecharges();
+    }
+    
+    function logout() {
+        localStorage.clear();
+        window.location.href = '/';
+    }
+    
+    // ========== API用户Dashboard函数 ==========
+    
+    // 检查用户类型
+    async function checkUserType() {
+        try {
+            const response = await fetch(`${API_URL}/dashboard/api`, {
+                headers: { 'Authorization': authHeader }
+            });
+            
+            if (response.ok) {
+                // 是API用户，显示API Dashboard
+                const data = await response.json();
+                renderAPIDashboard(data);
+            } else {
+                // 是普通用户，显示普通Dashboard
+                loadNormalDashboard();
+            }
+        } catch (error) {
+            // 出错则默认显示普通Dashboard
+            console.error('检查用户类型失败:', error);
+            loadNormalDashboard();
+        }
+    }
+    
+    // 普通用户Dashboard
+    function loadNormalDashboard() {
+        loadSummary();
+        loadRecharges();
+        
+        // 定时刷新
+        setInterval(() => {
+            loadSummary();
+            loadRecharges();
+        }, 60000);
+    }
+    
+    // 渲染API用户Dashboard
+    function renderAPIDashboard(data) {
+        console.log('API用户数据:', data);
+        
+        // 隐藏充值记录section
+        const rechargesSection = document.querySelector('.section:has(#rechargesBody)');
+        if (rechargesSection) {
+            rechargesSection.style.display = 'none';
+        }
+        
+        // 修改总览卡片标题和内容
+        const cards = document.querySelectorAll('.summary-card');
+        if (cards.length >= 4) {
+            // 第一个卡片：初始本金
+            const card1Title = cards[0].querySelector('h3');
+            const card1Value = cards[0].querySelector('.value');
+            if (card1Title) card1Title.textContent = '初始本金';
+            if (card1Value) card1Value.textContent = `$${data.initial_balance.toFixed(2)}`;
+            
+            // 第二个卡片：当前总资金
+            const card2Title = cards[1].querySelector('h3');
+            const card2Value = cards[1].querySelector('.value');
+            if (card2Title) card2Title.textContent = '当前总资金';
+            if (card2Value) card2Value.textContent = `$${data.current_balance.toFixed(2)}`;
+            
+            // 第三个卡片：总盈亏
+            const profitColor = data.total_profit >= 0 ? '#10b981' : '#ef4444';
+            const profitSign = data.total_profit >= 0 ? '+' : '';
+            const card3Value = cards[2].querySelector('.value');
+            if (card3Value) {
+                card3Value.textContent = `${profitSign}$${data.total_profit.toFixed(2)}`;
+                card3Value.style.color = profitColor;
+            }
+            
+            // 第四个卡片：盈亏率
+            const card4Value = cards[3].querySelector('.value');
+            if (card4Value) {
+                card4Value.textContent = `${profitSign}${data.profit_rate.toFixed(2)}%`;
+                card4Value.style.color = profitColor;
             }
         }
         
-        function closeHistoryModal() { document.getElementById('historyModal').classList.remove('active'); }
+        // 添加API交易信息区域
+        createAPITradingSection(data);
         
-        async function refresh() {
-            await fetch(`${API_URL}/dashboard/refresh`, {
-                method: 'POST',
+        // 添加刷新按钮
+        addAPIRefreshButton();
+        
+        // 定时刷新
+        setInterval(() => {
+            refreshAPIData();
+        }, 60000);
+    }
+    
+    // 创建API交易信息区域
+    function createAPITradingSection(data) {
+        const container = document.querySelector('.container');
+        
+        // 持仓列表
+        const positionsHTML = `
+            <div class="section">
+                <h2>当前持仓 (${data.positions.length})</h2>
+                <div class="table-container">
+                    <table class="desktop-table">
+                        <thead>
+                            <tr>
+                                <th>交易对</th>
+                                <th>方向</th>
+                                <th>数量</th>
+                                <th>开仓价</th>
+                                <th>标记价</th>
+                                <th>未实现盈亏</th>
+                                <th>盈亏率</th>
+                                <th>杠杆</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${data.positions.map(pos => `
+                                <tr>
+                                    <td>${pos.symbol}</td>
+                                    <td><span class="badge ${pos.side === 'LONG' ? 'long' : 'short'}">${pos.side}</span></td>
+                                    <td>${pos.size.toFixed(4)}</td>
+                                    <td>$${pos.entry_price.toFixed(2)}</td>
+                                    <td>$${pos.mark_price.toFixed(2)}</td>
+                                    <td style="color: ${pos.unrealized_pnl >= 0 ? '#10b981' : '#ef4444'}">
+                                        ${pos.unrealized_pnl >= 0 ? '+' : ''}$${pos.unrealized_pnl.toFixed(2)}
+                                    </td>
+                                    <td style="color: ${pos.unrealized_pnl_rate >= 0 ? '#10b981' : '#ef4444'}">
+                                        ${pos.unrealized_pnl_rate >= 0 ? '+' : ''}${pos.unrealized_pnl_rate.toFixed(2)}%
+                                    </td>
+                                    <td>${pos.leverage}x</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                    
+                    <!-- 移动端卡片 -->
+                    <div class="mobile-cards">
+                        ${data.positions.map(pos => `
+                            <div class="mobile-card">
+                                <div class="mobile-card-header">
+                                    <span style="font-weight:600; font-size:16px;">${pos.symbol}</span>
+                                    <span class="badge ${pos.side === 'LONG' ? 'long' : 'short'}">${pos.side}</span>
+                                </div>
+                                <div class="mobile-card-row">
+                                    <span class="mobile-card-label">数量</span>
+                                    <span class="mobile-card-value">${pos.size.toFixed(4)}</span>
+                                </div>
+                                <div class="mobile-card-row">
+                                    <span class="mobile-card-label">开仓价</span>
+                                    <span class="mobile-card-value">$${pos.entry_price.toFixed(2)}</span>
+                                </div>
+                                <div class="mobile-card-row">
+                                    <span class="mobile-card-label">标记价</span>
+                                    <span class="mobile-card-value">$${pos.mark_price.toFixed(2)}</span>
+                                </div>
+                                <div class="mobile-card-row">
+                                    <span class="mobile-card-label">未实现盈亏</span>
+                                    <span class="mobile-card-value" style="color: ${pos.unrealized_pnl >= 0 ? '#10b981' : '#ef4444'}">
+                                        ${pos.unrealized_pnl >= 0 ? '+' : ''}$${pos.unrealized_pnl.toFixed(2)}
+                                    </span>
+                                </div>
+                                <div class="mobile-card-row">
+                                    <span class="mobile-card-label">盈亏率</span>
+                                    <span class="mobile-card-value" style="color: ${pos.unrealized_pnl_rate >= 0 ? '#10b981' : '#ef4444'}">
+                                        ${pos.unrealized_pnl_rate >= 0 ? '+' : ''}${pos.unrealized_pnl_rate.toFixed(2)}%
+                                    </span>
+                                </div>
+                                <div class="mobile-card-row">
+                                    <span class="mobile-card-label">杠杆</span>
+                                    <span class="mobile-card-value">${pos.leverage}x</span>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // 委托列表
+        const ordersHTML = `
+            <div class="section">
+                <h2>当前委托 (${data.orders.length})</h2>
+                <div class="table-container">
+                    <table class="desktop-table">
+                        <thead>
+                            <tr>
+                                <th>交易对</th>
+                                <th>方向</th>
+                                <th>类型</th>
+                                <th>价格</th>
+                                <th>数量</th>
+                                <th>已成交</th>
+                                <th>时间</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${data.orders.map(ord => `
+                                <tr>
+                                    <td>${ord.symbol}</td>
+                                    <td><span class="badge ${ord.side === 'BUY' ? 'long' : 'short'}">${ord.side}</span></td>
+                                    <td>${ord.type}</td>
+                                    <td>$${ord.price.toFixed(2)}</td>
+                                    <td>${ord.orig_qty.toFixed(4)}</td>
+                                    <td>${ord.executed_qty.toFixed(4)}</td>
+                                    <td>${ord.time}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                    
+                    <!-- 移动端卡片 -->
+                    <div class="mobile-cards">
+                        ${data.orders.map(ord => `
+                            <div class="mobile-card">
+                                <div class="mobile-card-header">
+                                    <span style="font-weight:600; font-size:16px;">${ord.symbol}</span>
+                                    <span class="badge ${ord.side === 'BUY' ? 'long' : 'short'}">${ord.side}</span>
+                                </div>
+                                <div class="mobile-card-row">
+                                    <span class="mobile-card-label">类型</span>
+                                    <span class="mobile-card-value">${ord.type}</span>
+                                </div>
+                                <div class="mobile-card-row">
+                                    <span class="mobile-card-label">价格</span>
+                                    <span class="mobile-card-value">$${ord.price.toFixed(2)}</span>
+                                </div>
+                                <div class="mobile-card-row">
+                                    <span class="mobile-card-label">数量</span>
+                                    <span class="mobile-card-value">${ord.orig_qty.toFixed(4)}</span>
+                                </div>
+                                <div class="mobile-card-row">
+                                    <span class="mobile-card-label">已成交</span>
+                                    <span class="mobile-card-value">${ord.executed_qty.toFixed(4)}</span>
+                                </div>
+                                <div class="mobile-card-row">
+                                    <span class="mobile-card-label">时间</span>
+                                    <span class="mobile-card-value">${ord.time}</span>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // 历史记录
+        const historyHTML = `
+            <div class="section">
+                <h2>历史记录 (最近${data.history_trades.length}条)</h2>
+                <div class="table-container">
+                    <table class="desktop-table">
+                        <thead>
+                            <tr>
+                                <th>交易对</th>
+                                <th>方向</th>
+                                <th>开仓时间</th>
+                                <th>平仓时间</th>
+                                <th>数量</th>
+                                <th>已实现盈亏</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${data.history_trades.map(trade => `
+                                <tr>
+                                    <td>${trade.symbol}</td>
+                                    <td><span class="badge ${trade.side === 'BUY' ? 'long' : 'short'}">${trade.side}</span></td>
+                                    <td>${trade.open_time}</td>
+                                    <td>${trade.close_time}</td>
+                                    <td>${trade.quantity.toFixed(4)}</td>
+                                    <td style="color: ${trade.realized_pnl >= 0 ? '#10b981' : '#ef4444'}">
+                                        ${trade.realized_pnl >= 0 ? '+' : ''}$${trade.realized_pnl.toFixed(2)}
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                    
+                    <!-- 移动端卡片 -->
+                    <div class="mobile-cards">
+                        ${data.history_trades.map(trade => `
+                            <div class="mobile-card">
+                                <div class="mobile-card-header">
+                                    <span style="font-weight:600; font-size:16px;">${trade.symbol}</span>
+                                    <span class="badge ${trade.side === 'BUY' ? 'long' : 'short'}">${trade.side}</span>
+                                </div>
+                                <div class="mobile-card-row">
+                                    <span class="mobile-card-label">开仓时间</span>
+                                    <span class="mobile-card-value">${trade.open_time}</span>
+                                </div>
+                                <div class="mobile-card-row">
+                                    <span class="mobile-card-label">平仓时间</span>
+                                    <span class="mobile-card-value">${trade.close_time}</span>
+                                </div>
+                                <div class="mobile-card-row">
+                                    <span class="mobile-card-label">数量</span>
+                                    <span class="mobile-card-value">${trade.quantity.toFixed(4)}</span>
+                                </div>
+                                <div class="mobile-card-row">
+                                    <span class="mobile-card-label">盈亏</span>
+                                    <span class="mobile-card-value" style="color: ${trade.realized_pnl >= 0 ? '#10b981' : '#ef4444'}">
+                                        ${trade.realized_pnl >= 0 ? '+' : ''}$${trade.realized_pnl.toFixed(2)}
+                                    </span>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        container.insertAdjacentHTML('beforeend', positionsHTML);
+        container.insertAdjacentHTML('beforeend', ordersHTML);
+        container.insertAdjacentHTML('beforeend', historyHTML);
+    }
+    
+    // 添加API刷新按钮
+    function addAPIRefreshButton() {
+        const container = document.querySelector('.container');
+        const refreshButtonHTML = `
+            <div style="text-align: center; margin: 20px 0;">
+                <button class="btn" onclick="refreshAPIData()">🔄 刷新数据</button>
+            </div>
+        `;
+        container.insertAdjacentHTML('beforeend', refreshButtonHTML);
+    }
+    
+    // 刷新API用户数据
+    async function refreshAPIData() {
+        try {
+            const response = await fetch(`${API_URL}/dashboard/api`, {
                 headers: { 'Authorization': authHeader }
             });
-            loadSummary();
-            loadRecharges();
+            
+            if (response.ok) {
+                const data = await response.json();
+                
+                // 重新渲染页面（简单方式：刷新整个页面）
+                location.reload();
+            }
+        } catch (error) {
+            console.error('刷新失败:', error);
+            alert('刷新失败，请稍后重试');
         }
-        
-        function logout() {
-            localStorage.clear();
-            window.location.href = '/';
-        }
-        
-        // 检查认证
-function checkAuth() {
-    const phone = localStorage.getItem('phone');
-    const password = localStorage.getItem('password');
-    const isActive = localStorage.getItem('isActive');
-    
-    if (!phone || !password) {
-        window.location.href = '/';
-        return false;
     }
     
-    authHeader = 'Basic ' + btoa(phone + ':' + password);
-    document.getElementById('userPhone').textContent = phone;
+    // 监听窗口大小变化，自动切换布局
+    let resizeTimer;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+            loadRecharges(); // 重新加载充值记录以切换布局
+        }, 250);
+    });
     
-    // 显示账户状态
-    const statusEl = document.getElementById('userStatus');
-    if (statusEl && isActive === 'false') {
-        statusEl.innerHTML = '<span style="background: #ef4444; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px;">⚠️ 账户已停用</span>';
+    // ========== 页面加载时执行 ==========
+    if (checkAuth()) {
+        checkUserType(); // 检查用户类型并加载对应Dashboard
     }
-    
-    return true;
-}
-
-// 监听窗口大小变化，自动切换布局
-let resizeTimer;
-window.addEventListener('resize', () => {
-    clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => {
-        loadRecharges(); // 重新加载充值记录以切换布局
-    }, 250);
-});
-
-// 页面加载时检查并加载数据
-if (checkAuth()) {
-    loadSummary();
-    loadRecharges();
-    
-    // 定时刷新
-    setInterval(() => {
-        loadSummary();
-        loadRecharges();
-    }, 60000); // 每分钟刷新
-}
-    </script>
+</script>
 </body>
 </html>
