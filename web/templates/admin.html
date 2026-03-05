@@ -480,8 +480,8 @@ table {
         <h2>创建API用户</h2>
         <form id="createAPIUserForm">
             <div class="form-group">
-                <label>手机号</label>
-                <input type="text" id="apiUserPhone" required>
+                <label>用户名</label>
+                <input type="text" id="apiUserUsername" placeholder="自定义用户名" required>
             </div>
             <div class="form-group">
                 <label>密码</label>
@@ -742,7 +742,7 @@ function togglePassphrase() {
 document.getElementById('createAPIUserForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     
-    const phone = document.getElementById('apiUserPhone').value;
+    const username = document.getElementById('apiUserUsername').value;  // 改为username
     const password = document.getElementById('apiUserPassword').value;
     const apiType = document.getElementById('apiUserType').value;
     const apiKey = document.getElementById('apiUserKey').value;
@@ -757,7 +757,7 @@ document.getElementById('createAPIUserForm').addEventListener('submit', async (e
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                phone,
+                username,  // 改为username
                 password,
                 api_type: apiType,
                 api_key: apiKey,
@@ -769,7 +769,7 @@ document.getElementById('createAPIUserForm').addEventListener('submit', async (e
         const data = await response.json();
         
         if (response.ok) {
-            alert(`✓ API用户创建成功！\n用户名: ${phone}\n可登录Dashboard查看`);
+            alert(`✓ API用户创建成功！\n用户名: ${username}\n可登录Dashboard查看`);
             closeAPIUserModal();
             loadUsers();
         } else {

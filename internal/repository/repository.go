@@ -463,18 +463,49 @@ func (r *Repository) DeleteAdminAccount(accountID int) error {
 	return err
 }
 
-// CreateAPIUser 创建API用户
-// CreateAPIUser 创建API用户（记录初始余额）
-func (r *Repository) CreateAPIUser(phone, passwordHash string, adminAccountID int, initialBalance float64) (int64, error) {
+// CreateAPIUser 创建API用户（使用username）
+func (r *Repository) CreateAPIUser(username, passwordHash string, adminAccountID int, initialBalance float64) (int64, error) {
 	result, err := r.db.Exec(
-		`INSERT INTO users (phone, password_hash, is_admin, is_active, is_api_user, api_admin_account_id, initial_balance)
+		`INSERT INTO users (username, password_hash, is_admin, is_active, is_api_user, api_admin_account_id, initial_balance)
 		 VALUES (?, ?, 0, 1, 1, ?, ?)`,
-		phone, passwordHash, adminAccountID, initialBalance,
+		username, passwordHash, adminAccountID, initialBalance,
 	)
 	if err != nil {
 		return 0, err
 	}
 	return result.LastInsertId()
+}
+
+// GetUserByUsername 通过用户名获取用户
+func (r *Repository) GetUserByUsername(username string) (*model.User, error) {
+	user := &model.User{}
+	err := r.db.QueryRow(`
+		SELECT id, COALESCE(phone, ''), COALESCE(username, ''), password_hash, is_admin, 
+		       COALESCE(is_active, 1),
+		       COALESCE(is_api_user, 0),
+		       COALESCE(api_admin_account_id, 0),
+		       COALESCE(initial_balance, 0),
+		       created_at 
+		FROM users 
+		WHERE username = ?`,
+		username,
+	).Scan(
+		&user.ID,
+		&user.Phone,
+		&user.Username,
+		&user.PasswordHash,
+		&user.IsAdmin,
+		&user.IsActive,
+		&user.IsAPIUser,
+		&user.APIAdminAccountID,
+		&user.InitialBalance,
+		&user.CreatedAt,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return user, err
 }
 
 func (r *Repository) GetRechargesByUserID(userID int) ([]*model.Recharge, error) {

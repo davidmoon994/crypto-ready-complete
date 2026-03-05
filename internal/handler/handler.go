@@ -61,28 +61,44 @@ func (h *Handler) AdminMiddleware() gin.HandlerFunc {
 	}
 }
 
-// Login 登录
+// Login 用户登录
 func (h *Handler) Login(c *gin.Context) {
-	var req model.LoginRequest
+	var req struct {
+		Username string `json:"username" binding:"required"` // 改为username，兼容手机号和用户名
+		Password string `json:"password" binding:"required"`
+	}
+
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数错误"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
 		return
 	}
 
-	user, err := h.service.Login(req.Phone, req.Password)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+	// 先尝试用手机号查询
+	user, err := h.service.Login(req.Username, req.Password)
+
+	// 如果手机号查询失败，尝试用用户名查询
+	if err != nil || user == nil {
+		user, err = h.service.LoginByUsername(req.Username, req.Password)
+	}
+
+	if err != nil || user == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户名或密码错误"})
 		return
 	}
 
-	// 不检查 is_active，允许停用用户登录查看历史记录
+	// 返回用户信息
+	displayName := user.Phone
+	if user.IsAPIUser && user.Username != "" {
+		displayName = user.Username
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"message": "登录成功",
 		"user": gin.H{
 			"id":        user.ID,
-			"phone":     user.Phone,
+			"username":  displayName,
 			"is_admin":  user.IsAdmin,
-			"is_active": user.IsActive, // 返回状态供前端显示
+			"is_active": user.IsActive,
 		},
 	})
 }
@@ -351,12 +367,12 @@ func (h *Handler) AdminGetRechargeStats(c *gin.Context) {
 // AdminCreateAPIUser 通过API创建独立的Dashboard用户
 func (h *Handler) AdminCreateAPIUser(c *gin.Context) {
 	var req struct {
-		Phone      string `json:"phone" binding:"required"`
+		Username   string `json:"username" binding:"required"` // 改为username
 		Password   string `json:"password" binding:"required"`
-		APIType    string `json:"api_type" binding:"required"` // "Binance" 或 "OKX"
+		APIType    string `json:"api_type" binding:"required"`
 		APIKey     string `json:"api_key" binding:"required"`
 		APISecret  string `json:"api_secret" binding:"required"`
-		Passphrase string `json:"passphrase"` // OKX需要
+		Passphrase string `json:"passphrase"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -378,7 +394,7 @@ func (h *Handler) AdminCreateAPIUser(c *gin.Context) {
 
 	// 创建API用户
 	userID, adminAccountID, err := h.service.CreateAPIUser(
-		req.Phone,
+		req.Username, // 传入username
 		req.Password,
 		req.APIType,
 		req.APIKey,
@@ -394,7 +410,7 @@ func (h *Handler) AdminCreateAPIUser(c *gin.Context) {
 		"message":          "API用户创建成功",
 		"user_id":          userID,
 		"admin_account_id": adminAccountID,
-		"login_username":   req.Phone,
+		"login_username":   req.Username, // 返回username
 		"dashboard_url":    "/dashboard",
 	})
 }

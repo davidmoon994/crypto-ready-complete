@@ -5,16 +5,16 @@ import (
 )
 
 // User Dashboard用户（虚拟账本容器）
-// User模型添加字段
 type User struct {
 	ID                int       `json:"id"`
-	Phone             string    `json:"phone"`
+	Phone             string    `json:"phone"`    // 普通用户用手机号，API用户用用户名
+	Username          string    `json:"username"` // 新增：API用户的用户名
 	PasswordHash      string    `json:"-"`
 	IsAdmin           bool      `json:"is_admin"`
 	IsActive          bool      `json:"is_active"`
 	IsAPIUser         bool      `json:"is_api_user"`
 	APIAdminAccountID int       `json:"api_admin_account_id"`
-	InitialBalance    float64   `json:"initial_balance"` // 新增
+	InitialBalance    float64   `json:"initial_balance"`
 	CreatedAt         time.Time `json:"created_at"`
 }
 
