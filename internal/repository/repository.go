@@ -508,17 +508,20 @@ func (r *Repository) GetUserByUsername(username string) (*model.User, error) {
 	return user, err
 }
 
-// GetSystemRecharge 获取系统充值记录（user_id=0）
-func (r *Repository) GetSystemRecharge(adminAccountID int) (*model.Recharge, error) {
+// GetSystemRecharge 获取系统充值记录（按账户和币种）
+func (r *Repository) GetSystemRecharge(adminAccountID int, currency string) (*model.Recharge, error) {
 	recharge := &model.Recharge{}
 	err := r.db.QueryRow(`
 		SELECT id, user_id, admin_account_id, amount, currency, 
 		       COALESCE(base_balance, 0), COALESCE(shares, 0),
 		       recharge_at, is_active
 		FROM recharges 
-		WHERE user_id = 0 AND admin_account_id = ? AND is_active = 1
+		WHERE user_id = 0 
+		  AND admin_account_id = ? 
+		  AND currency = ?
+		  AND is_active = 1
 		LIMIT 1`,
-		adminAccountID,
+		adminAccountID, currency,
 	).Scan(
 		&recharge.ID,
 		&recharge.UserID,
@@ -538,6 +541,67 @@ func (r *Repository) GetSystemRecharge(adminAccountID int) (*model.Recharge, err
 		return nil, err
 	}
 	return recharge, nil
+}
+
+// GetSystemSharesByCurrency 获取系统账户某币种的总份额
+func (r *Repository) GetSystemSharesByCurrency(adminAccountID int, currency string) (float64, error) {
+	var shares float64
+	err := r.db.QueryRow(`
+		SELECT COALESCE(SUM(shares), 0)
+		FROM recharges
+		WHERE user_id = 0 
+		  AND admin_account_id = ?
+		  AND currency = ?
+		  AND is_active = 1`,
+		adminAccountID, currency,
+	).Scan(&shares)
+
+	return shares, err
+}
+
+// GetUserSharesByCurrency 获取用户在某账户某币种的总份额
+func (r *Repository) GetUserSharesByCurrency(userID, adminAccountID int, currency string) (float64, error) {
+	var shares float64
+	err := r.db.QueryRow(`
+		SELECT COALESCE(SUM(shares), 0)
+		FROM recharges
+		WHERE user_id = ?
+		  AND admin_account_id = ?
+		  AND currency = ?
+		  AND is_active = 1`,
+		userID, adminAccountID, currency,
+	).Scan(&shares)
+
+	return shares, err
+}
+
+// GetTotalSharesByCurrency 获取某账户某币种的总份额（包括系统和所有用户）
+func (r *Repository) GetTotalSharesByCurrency(adminAccountID int, currency string) (float64, error) {
+	var shares float64
+	err := r.db.QueryRow(`
+		SELECT COALESCE(SUM(shares), 0)
+		FROM recharges
+		WHERE admin_account_id = ?
+		  AND currency = ?
+		  AND is_active = 1`,
+		adminAccountID, currency,
+	).Scan(&shares)
+
+	return shares, err
+}
+
+// GetAllSharesByAccount 获取某账户所有币种的总份额
+func (r *Repository) GetAllSharesByAccount(adminAccountID int) (float64, error) {
+	var shares float64
+	err := r.db.QueryRow(`
+		SELECT COALESCE(SUM(shares), 0)
+		FROM recharges
+		WHERE admin_account_id = ?
+		  AND is_active = 1`,
+		adminAccountID,
+	).Scan(&shares)
+
+	return shares, err
 }
 
 // UpdateRechargeShares 更新充值记录的份额

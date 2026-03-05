@@ -140,7 +140,6 @@ func (s *Service) AdminRecharge(userID int, adminAccountID int, amount float64, 
 		return errors.New("充值金额必须大于0")
 	}
 
-	// 验证用户存在
 	user, err := s.repo.GetUserByID(userID)
 	if err != nil {
 		return err
@@ -149,7 +148,6 @@ func (s *Service) AdminRecharge(userID int, adminAccountID int, amount float64, 
 		return errors.New("用户不存在")
 	}
 
-	// 验证Admin账户存在
 	adminAccount, err := s.repo.GetAdminAccountByID(adminAccountID)
 	if err != nil {
 		return err
@@ -158,84 +156,44 @@ func (s *Service) AdminRecharge(userID int, adminAccountID int, amount float64, 
 		return errors.New("Admin账户不存在")
 	}
 
-	fmt.Printf("\n💰 用户充值操作:\n")
+	fmt.Printf("\n💰 用户充值:\n")
 	fmt.Printf("  用户: %s (ID: %d)\n", user.Phone, userID)
-	fmt.Printf("  充值金额: $%.2f %s\n", amount, currency)
-	fmt.Printf("  从账户: %s (ID: %d)\n", adminAccount.AccountType, adminAccountID)
+	fmt.Printf("  账户: %s (ID: %d)\n", adminAccount.AccountType, adminAccountID)
+	fmt.Printf("  币种: %s\n", currency)
+	fmt.Printf("  金额: $%.2f\n", amount)
 
-	// 🔥 步骤1: 刷新账户余额
-	fmt.Println("\n  [步骤1] 刷新账户余额...")
-	latestBalance, err := s.walletService.GetBalance(adminAccount)
-	if err != nil {
-		fmt.Printf("  ⚠️  获取余额失败: %v\n", err)
-		fmt.Println("  → 使用数据库余额")
-	} else {
-		s.repo.UpdateAdminAccountBalance(adminAccountID, latestBalance)
-		adminAccount.CurrentBalance = latestBalance
-		fmt.Printf("  ✓ 最新余额: $%.2f\n", latestBalance)
-	}
-
-	currentBalance := adminAccount.CurrentBalance
-	currentShares := adminAccount.TotalShares
-
-	// 🔥 步骤2: 检查系统账户是否有足够的份额
-	fmt.Printf("\n  [步骤2] 当前账户状态:\n")
-	fmt.Printf("    总余额: $%.2f\n", currentBalance)
-	fmt.Printf("    总份额: %.4f\n", currentShares)
-
-	// 获取系统账户的可用份额
-	systemRecharge, err := s.repo.GetSystemRecharge(adminAccountID)
+	// 🔥 获取该币种的系统可用份额
+	systemRecharge, err := s.repo.GetSystemRecharge(adminAccountID, currency)
 	if err != nil {
 		return fmt.Errorf("获取系统账户失败: %v", err)
 	}
 
-	var systemAvailableShares float64
-	if systemRecharge != nil {
-		systemAvailableShares = systemRecharge.Shares
-		fmt.Printf("    系统可用份额: %.4f\n", systemAvailableShares)
-	} else {
-		fmt.Println("    ⚠️  系统账户不存在，将自动创建")
-		systemAvailableShares = 0
+	if systemRecharge == nil {
+		return fmt.Errorf("系统账户中没有%s可用，请先充值%s到系统账户", currency, currency)
 	}
 
-	// 🔥 步骤3: 计算需要划转的份额
-	var netValue float64
-	var transferShares float64
+	systemAvailableShares := systemRecharge.Shares
+	fmt.Printf("\n  [步骤1] 系统%s可用份额: %.4f\n", currency, systemAvailableShares)
 
-	if currentShares == 0 {
-		// 首次充值：净值为1
-		netValue = 1.0
-		transferShares = amount
-		fmt.Printf("\n  [步骤3] 首次充值，净值: $1.00\n")
-	} else {
-		// 后续充值：按净值计算
-		netValue = currentBalance / currentShares
-		transferShares = amount / netValue
-		fmt.Printf("\n  [步骤3] 按净值计算:\n")
-		fmt.Printf("    当前净值: $%.4f\n", netValue)
-	}
+	// 🔥 按该币种的净值计算需要的份额
+	// 简化处理：稳定币净值=1
+	netValue := 1.0
+	transferShares := amount / netValue
 
-	fmt.Printf("    需划转份额: %.4f (价值 $%.2f)\n", transferShares, amount)
+	fmt.Printf("  [步骤2] %s净值: $%.4f\n", currency, netValue)
+	fmt.Printf("  [步骤3] 需划转份额: %.4f (价值 $%.2f)\n", transferShares, amount)
 
-	// 🔥 步骤4: 检查系统账户是否有足够份额
+	// 检查系统份额是否足够
 	if transferShares > systemAvailableShares {
-		return fmt.Errorf("系统账户份额不足！需要 %.4f 份额，但只有 %.4f 份额可用",
-			transferShares, systemAvailableShares)
+		return fmt.Errorf("系统%s份额不足！需要%.4f份额，但只有%.4f份额可用",
+			currency, transferShares, systemAvailableShares)
 	}
 
-	// 🔥 步骤5: 从系统账户划转份额给用户
-	fmt.Printf("\n  [步骤4] 划转份额:\n")
-	fmt.Printf("    从: 系统账户\n")
-	fmt.Printf("    到: 用户 %s\n", user.Phone)
-	fmt.Printf("    份额: %.4f\n", transferShares)
-
-	// 减少系统账户份额
+	// 从系统账户扣除份额
 	newSystemShares := systemAvailableShares - transferShares
-	if systemRecharge != nil {
-		err = s.repo.UpdateRechargeShares(systemRecharge.ID, newSystemShares)
-		if err != nil {
-			return fmt.Errorf("更新系统账户份额失败: %v", err)
-		}
+	err = s.repo.UpdateRechargeShares(systemRecharge.ID, newSystemShares)
+	if err != nil {
+		return fmt.Errorf("更新系统份额失败: %v", err)
 	}
 
 	// 创建用户充值记录
@@ -244,31 +202,28 @@ func (s *Service) AdminRecharge(userID int, adminAccountID int, amount float64, 
 		adminAccountID,
 		amount,
 		currency,
-		currentBalance, // base_balance
-		transferShares, // shares
+		0, // base_balance
+		transferShares,
 	)
 	if err != nil {
-		// 回滚系统账户份额
-		if systemRecharge != nil {
-			s.repo.UpdateRechargeShares(systemRecharge.ID, systemAvailableShares)
-		}
+		// 回滚系统份额
+		s.repo.UpdateRechargeShares(systemRecharge.ID, systemAvailableShares)
 		return fmt.Errorf("创建充值记录失败: %v", err)
 	}
 
-	fmt.Printf("\n  ✓ 充值完成 (记录ID: %d)\n", rechargeID)
-	fmt.Printf("    用户份额: %.4f\n", transferShares)
-	fmt.Printf("    系统剩余份额: %.4f\n", newSystemShares)
+	fmt.Printf("\n  [步骤4] ✓ 充值完成 (记录ID: %d)\n", rechargeID)
+	fmt.Printf("    用户获得%s份额: %.4f\n", currency, transferShares)
+	fmt.Printf("    系统剩余%s份额: %.4f\n", currency, newSystemShares)
 
 	return nil
 }
 
-// AdminDepositToExchange Admin充值到交易所（自动进入系统账户）
+// AdminDepositToExchange Admin充值到交易所（按币种独立计算）
 func (s *Service) AdminDepositToExchange(adminAccountID int, amount float64, currency string) error {
 	if amount <= 0 {
 		return errors.New("充值金额必须大于0")
 	}
 
-	// 获取Admin账户
 	adminAccount, err := s.repo.GetAdminAccountByID(adminAccountID)
 	if err != nil {
 		return err
@@ -278,61 +233,59 @@ func (s *Service) AdminDepositToExchange(adminAccountID int, amount float64, cur
 	}
 
 	fmt.Printf("\n💵 Admin充值到交易所:\n")
-	fmt.Printf("  账户: %s (ID: %d)\n", adminAccount.AccountType, adminAccountID)
-	fmt.Printf("  充值金额: $%.2f %s\n", amount, currency)
+	fmt.Printf("  账户: %s\n", adminAccount.AccountType)
+	fmt.Printf("  币种: %s\n", currency)
+	fmt.Printf("  充值金额: $%.2f\n", amount)
 
-	// 🔥 步骤1: 刷新余额（充值前）
-	fmt.Println("\n  [步骤1] 充值前刷新余额...")
-	balanceBefore, err := s.walletService.GetBalance(adminAccount)
-	if err != nil {
-		fmt.Printf("  ⚠️  获取余额失败: %v\n", err)
-		balanceBefore = adminAccount.CurrentBalance
-	}
-	fmt.Printf("  ✓ 充值前余额: $%.2f\n", balanceBefore)
-
-	currentShares := adminAccount.TotalShares
-
-	// 🔥 步骤2: 计算购买份额
-	var purchasedShares float64
-	var netValue float64
-
-	if currentShares == 0 {
-		// 首次充值
-		netValue = 1.0
-		purchasedShares = amount
-		fmt.Printf("\n  [步骤2] 首次充值，净值: $1.00\n")
-	} else {
-		// 按净值计算
-		netValue = balanceBefore / currentShares
-		purchasedShares = amount / netValue
-		fmt.Printf("\n  [步骤2] 按净值计算:\n")
-		fmt.Printf("    当前净值: $%.4f\n", netValue)
-	}
-
-	fmt.Printf("    购买份额: %.4f\n", purchasedShares)
-
-	// 🔥 步骤3: 获取或创建系统充值记录
-	systemRecharge, err := s.repo.GetSystemRecharge(adminAccountID)
+	// 获取该币种的系统充值记录
+	systemRecharge, err := s.repo.GetSystemRecharge(adminAccountID, currency)
 	if err != nil {
 		return fmt.Errorf("获取系统账户失败: %v", err)
 	}
 
+	// 获取该币种的总份额
+	totalShares, err := s.repo.GetTotalSharesByCurrency(adminAccountID, currency)
+	if err != nil {
+		return fmt.Errorf("获取总份额失败: %v", err)
+	}
+
+	// 🔥 计算购买份额（简化：净值=1）
+	// TODO: 未来可以改进为按实际汇率计算净值
+	var netValue float64
+	var purchasedShares float64
+
+	if totalShares == 0 {
+		// 该币种首次充值
+		netValue = 1.0
+		purchasedShares = amount
+		fmt.Printf("\n  [%s首次充值] 净值: $1.00\n", currency)
+	} else {
+		// 该币种后续充值
+		// 简化处理：假设稳定币净值=1
+		netValue = 1.0
+		purchasedShares = amount
+		fmt.Printf("\n  [%s充值] 净值: $%.4f\n", currency, netValue)
+	}
+
+	fmt.Printf("  购买份额: %.4f\n", purchasedShares)
+
+	// 创建或更新系统充值记录
 	if systemRecharge == nil {
-		// 创建系统充值记录
+		// 创建新的系统充值记录
 		rechargeID, err := s.repo.CreateRechargeWithShares(
-			0, // user_id = 0 表示系统
+			0, // user_id = 0
 			adminAccountID,
 			amount,
 			currency,
-			balanceBefore,
+			0,
 			purchasedShares,
 		)
 		if err != nil {
 			return fmt.Errorf("创建系统充值记录失败: %v", err)
 		}
-		fmt.Printf("\n  [步骤3] ✓ 创建系统充值记录 (ID: %d)\n", rechargeID)
+		fmt.Printf("\n  ✓ 创建%s系统充值记录 (ID: %d)\n", currency, rechargeID)
 	} else {
-		// 更新系统充值记录（累加金额和份额）
+		// 更新现有记录
 		newAmount := systemRecharge.Amount + amount
 		newShares := systemRecharge.Shares + purchasedShares
 
@@ -340,25 +293,25 @@ func (s *Service) AdminDepositToExchange(adminAccountID int, amount float64, cur
 		if err != nil {
 			return fmt.Errorf("更新系统充值记录失败: %v", err)
 		}
-		fmt.Printf("\n  [步骤3] ✓ 更新系统充值记录 (ID: %d)\n", systemRecharge.ID)
+		fmt.Printf("\n  ✓ 更新%s系统充值记录 (ID: %d)\n", currency, systemRecharge.ID)
 		fmt.Printf("    累计充值: $%.2f → $%.2f\n", systemRecharge.Amount, newAmount)
 		fmt.Printf("    累计份额: %.4f → %.4f\n", systemRecharge.Shares, newShares)
 	}
 
-	// 🔥 步骤4: 更新总份额
-	newTotalShares := currentShares + purchasedShares
-	err = s.repo.UpdateAdminAccountShares(adminAccountID, newTotalShares)
+	// 更新Admin账户总份额（所有币种之和）
+	allShares, err := s.repo.GetAllSharesByAccount(adminAccountID)
+	if err != nil {
+		return fmt.Errorf("获取总份额失败: %v", err)
+	}
+	err = s.repo.UpdateAdminAccountShares(adminAccountID, allShares)
 	if err != nil {
 		return fmt.Errorf("更新总份额失败: %v", err)
 	}
 
-	fmt.Printf("\n  [步骤4] ✓ 更新总份额: %.4f → %.4f\n", currentShares, newTotalShares)
+	fmt.Printf("  账户总份额更新为: %.4f\n", allShares)
+	fmt.Printf("\n  ⚠️  请将 $%.2f %s 充值到 %s\n", amount, currency, adminAccount.AccountType)
+	fmt.Println("  → 充值完成后点击「手动检查余额」")
 
-	// 🔥 步骤5: 提示完成实际充值
-	fmt.Printf("\n  ⚠️  请立即将 $%.2f %s 充值到 %s 交易所\n", amount, currency, adminAccount.AccountType)
-	fmt.Println("  → 充值完成后，点击「手动检查余额」更新数据")
-
-	fmt.Println("\n✓ 系统账户充值记录已创建")
 	return nil
 }
 

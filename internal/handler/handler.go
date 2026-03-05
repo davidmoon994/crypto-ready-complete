@@ -64,20 +64,20 @@ func (h *Handler) AdminMiddleware() gin.HandlerFunc {
 // Login 用户登录
 func (h *Handler) Login(c *gin.Context) {
 	var req struct {
-		Username string `json:"username" binding:"required"` // 改为username，兼容手机号和用户名
+		Username string `json:"username" binding:"required"`
 		Password string `json:"password" binding:"required"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误: " + err.Error()})
 		return
 	}
 
-	// 先尝试用手机号查询
+	// 🔥 先尝试用手机号登录（普通用户和admin）
 	user, err := h.service.Login(req.Username, req.Password)
 
-	// 如果手机号查询失败，尝试用用户名查询
-	if err != nil || user == nil {
+	// 🔥 如果手机号登录失败，尝试用用户名登录（API用户）
+	if (err != nil || user == nil) && h.service.LoginByUsername != nil {
 		user, err = h.service.LoginByUsername(req.Username, req.Password)
 	}
 
@@ -87,9 +87,9 @@ func (h *Handler) Login(c *gin.Context) {
 	}
 
 	// 返回用户信息
-	displayName := user.Phone
-	if user.IsAPIUser && user.Username != "" {
-		displayName = user.Username
+	displayName := req.Username
+	if user.Phone != "" {
+		displayName = user.Phone
 	}
 
 	c.JSON(http.StatusOK, gin.H{
