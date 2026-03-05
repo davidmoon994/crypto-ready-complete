@@ -428,3 +428,25 @@ func (h *Handler) GetAPIDashboard(c *gin.Context) {
 
 	c.JSON(http.StatusOK, data)
 }
+
+// AdminDepositToExchange Admin直接充值到交易所（进入系统账户）
+func (h *Handler) AdminDepositToExchange(c *gin.Context) {
+	var req struct {
+		AdminAccountID int     `json:"admin_account_id" binding:"required"`
+		Amount         float64 `json:"amount" binding:"required"`
+		Currency       string  `json:"currency" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		return
+	}
+
+	err := h.service.AdminDepositToExchange(req.AdminAccountID, req.Amount, req.Currency)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "充值到系统账户成功"})
+}

@@ -426,6 +426,7 @@ table {
         <h1>⚙️ 管理后台</h1>
         <div class="navbar-buttons">
             <button class="btn" onclick="showConfigModal()">⚙️ 配置钱包</button>
+            <button class="btn" onclick="showDepositModal()">💵 充值到交易所</button>
             <button class="btn" onclick="manualCheck()">🔄 手动检查余额</button>
             <button class="btn" onclick="logout()">退出</button>
         </div>
@@ -474,6 +475,40 @@ table {
                 </div>
             </div>
     
+<!-- 充值到交易所模态框 -->
+<div id="depositModal" class="modal">
+    <div class="modal-content" style="max-width: 500px;">
+        <h2>充值到交易所（进入系统账户）</h2>
+        <form id="depositForm">
+            <div class="form-group">
+                <label>选择账户</label>
+                <select id="depositAccountId" required>
+                    <option value="">请选择...</option>
+                    <option value="1">Binance</option>
+                    <option value="2">OKX</option>
+                    <option value="3">Wallet</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>充值金额</label>
+                <input type="number" id="depositAmount" step="0.01" required>
+            </div>
+            <div class="form-group">
+                <label>币种</label>
+                <select id="depositCurrency" required>
+                    <option value="USDT">USDT</option>
+                    <option value="USDC">USDC</option>
+                </select>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button type="submit" class="btn">确认充值</button>
+                <button type="button" class="btn" onclick="closeDepositModal()">取消</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+
 <!-- 模态框 -->
 <div id="apiUserModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000;">
     <div style="background:white; max-width:500px; margin:100px auto; padding:30px; border-radius:10px;">
@@ -671,6 +706,50 @@ table {
             return true;
         }
         
+        function showDepositModal() {
+    document.getElementById('depositModal').style.display = 'flex';
+}
+
+function closeDepositModal() {
+    document.getElementById('depositModal').style.display = 'none';
+    document.getElementById('depositForm').reset();
+}
+
+document.getElementById('depositForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const accountId = parseInt(document.getElementById('depositAccountId').value);
+    const amount = parseFloat(document.getElementById('depositAmount').value);
+    const currency = document.getElementById('depositCurrency').value;
+    
+    try {
+        const response = await fetch(`${API_URL}/admin/deposit`, {
+            method: 'POST',
+            headers: {
+                'Authorization': authHeader,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                admin_account_id: accountId,
+                amount: amount,
+                currency: currency
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            alert(`✓ ${data.message}\n\n请立即将 $${amount} ${currency} 充值到对应交易所\n充值完成后点击「手动检查余额」`);
+            closeDepositModal();
+            loadAccountsStatus();
+        } else {
+            alert(`❌ 充值失败: ${data.error}`);
+        }
+    } catch (error) {
+        alert(`❌ 网络错误: ${error.message}`);
+    }
+});
+
         async function loadWallets() {
     const walletGrid = document.getElementById('walletGrid');
     

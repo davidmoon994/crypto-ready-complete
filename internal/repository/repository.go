@@ -508,6 +508,56 @@ func (r *Repository) GetUserByUsername(username string) (*model.User, error) {
 	return user, err
 }
 
+// GetSystemRecharge 获取系统充值记录（user_id=0）
+func (r *Repository) GetSystemRecharge(adminAccountID int) (*model.Recharge, error) {
+	recharge := &model.Recharge{}
+	err := r.db.QueryRow(`
+		SELECT id, user_id, admin_account_id, amount, currency, 
+		       COALESCE(base_balance, 0), COALESCE(shares, 0),
+		       recharge_at, is_active
+		FROM recharges 
+		WHERE user_id = 0 AND admin_account_id = ? AND is_active = 1
+		LIMIT 1`,
+		adminAccountID,
+	).Scan(
+		&recharge.ID,
+		&recharge.UserID,
+		&recharge.AdminAccountID,
+		&recharge.Amount,
+		&recharge.Currency,
+		&recharge.BaseBalance,
+		&recharge.Shares,
+		&recharge.RechargeAt,
+		&recharge.IsActive,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return recharge, nil
+}
+
+// UpdateRechargeShares 更新充值记录的份额
+func (r *Repository) UpdateRechargeShares(rechargeID int, shares float64) error {
+	_, err := r.db.Exec(
+		"UPDATE recharges SET shares = ? WHERE id = ?",
+		shares, rechargeID,
+	)
+	return err
+}
+
+// UpdateRechargeAmountAndShares 更新充值记录的金额和份额
+func (r *Repository) UpdateRechargeAmountAndShares(rechargeID int, amount, shares float64) error {
+	_, err := r.db.Exec(
+		"UPDATE recharges SET amount = ?, shares = ? WHERE id = ?",
+		amount, shares, rechargeID,
+	)
+	return err
+}
+
 func (r *Repository) GetRechargesByUserID(userID int) ([]*model.Recharge, error) {
 	rows, err := r.db.Query(
 		`SELECT id, user_id, admin_account_id, amount, currency, recharge_at, 
