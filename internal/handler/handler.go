@@ -61,10 +61,11 @@ func (h *Handler) AdminMiddleware() gin.HandlerFunc {
 	}
 }
 
-// Login 用户登录
+// Login 用户登录（兼容多种字段名）
 func (h *Handler) Login(c *gin.Context) {
 	var req struct {
-		Username string `json:"username" binding:"required"`
+		Username string `json:"username"` // 新字段
+		Phone    string `json:"phone"`    // 旧字段
 		Password string `json:"password" binding:"required"`
 	}
 
@@ -73,12 +74,28 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	// 🔥 先尝试用手机号登录（普通用户和admin）
-	user, err := h.service.Login(req.Username, req.Password)
+	// 🔥 兼容处理：username或phone都可以
+	loginIdentifier := req.Username
+	if loginIdentifier == "" {
+		loginIdentifier = req.Phone
+	}
 
-	// 🔥 如果手机号登录失败，尝试用用户名登录（API用户）
-	if (err != nil || user == nil) && h.service.LoginByUsername != nil {
-		user, err = h.service.LoginByUsername(req.Username, req.Password)
+	if loginIdentifier == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供用户名或手机号"})
+		return
+	}
+
+	if req.Password == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供密码"})
+		return
+	}
+
+	// 先尝试用手机号查询
+	user, err := h.service.Login(loginIdentifier, req.Password)
+
+	// 如果失败，尝试用用户名查询
+	if err != nil || user == nil {
+		user, err = h.service.LoginByUsername(loginIdentifier, req.Password)
 	}
 
 	if err != nil || user == nil {
@@ -87,9 +104,12 @@ func (h *Handler) Login(c *gin.Context) {
 	}
 
 	// 返回用户信息
-	displayName := req.Username
-	if user.Phone != "" {
-		displayName = user.Phone
+	displayName := user.Phone
+	if user.IsAPIUser && user.Username != "" {
+		displayName = user.Username
+	}
+	if displayName == "" {
+		displayName = loginIdentifier
 	}
 
 	c.JSON(http.StatusOK, gin.H{
