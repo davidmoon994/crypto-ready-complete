@@ -155,9 +155,9 @@ func (h *Handler) AdminGetUsers(c *gin.Context) {
 
 	var result []gin.H
 	for _, user := range users {
-		// 🔥 检查是否是API用户
-		isAPIUser := false
+		// 🔥 从数据库查询是否是API用户
 		userDetail, _ := h.service.GetUserByID(user.UserID)
+		isAPIUser := false
 		if userDetail != nil {
 			isAPIUser = userDetail.IsAPIUser
 		}
@@ -166,7 +166,7 @@ func (h *Handler) AdminGetUsers(c *gin.Context) {
 			"user_id":        user.UserID,
 			"phone":          user.Phone,
 			"is_active":      user.IsActive,
-			"is_api_user":    isAPIUser, // 🔥 新增
+			"is_api_user":    isAPIUser, // 使用查询到的值
 			"total_recharge": user.TotalRecharge,
 			"current_value":  user.CurrentValue,
 			"total_profit":   user.TotalProfit,
