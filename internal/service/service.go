@@ -406,7 +406,12 @@ func (s *Service) UpdateUserStatus(userID int, isActive bool) error {
 	return s.repo.UpdateUserStatus(userID, isActive)
 }
 
-// GetUserByID 获取用户信息
+// GetAllUsers 获取所有用户（含盈亏统计）
+func (s *Service) GetAllUsers() ([]*model.UserSummary, error) {
+	return s.repo.GetAllUsers()
+}
+
+// GetUserByID 获取用户详情
 func (s *Service) GetUserByID(userID int) (*model.User, error) {
 	return s.repo.GetUserByID(userID)
 }

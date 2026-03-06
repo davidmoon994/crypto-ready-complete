@@ -147,13 +147,34 @@ func (h *Handler) AdminCreateUser(c *gin.Context) {
 
 // AdminGetUsers 获取所有Dashboard用户
 func (h *Handler) AdminGetUsers(c *gin.Context) {
-	users, err := h.service.GetAllDashboardUsersWithStats()
+	users, err := h.service.GetAllUsers()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"users": users})
+	var result []gin.H
+	for _, user := range users {
+		// 🔥 检查是否是API用户
+		isAPIUser := false
+		userDetail, _ := h.service.GetUserByID(user.UserID)
+		if userDetail != nil {
+			isAPIUser = userDetail.IsAPIUser
+		}
+
+		result = append(result, gin.H{
+			"user_id":        user.UserID,
+			"phone":          user.Phone,
+			"is_active":      user.IsActive,
+			"is_api_user":    isAPIUser, // 🔥 新增
+			"total_recharge": user.TotalRecharge,
+			"current_value":  user.CurrentValue,
+			"total_profit":   user.TotalProfit,
+			"recharge_count": user.RechargeCount,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"users": result})
 }
 
 // AdminGetUserDetail 获取用户详情

@@ -155,18 +155,20 @@ func (r *Repository) GetUserByPhone(phone string) (*model.User, error) {
 	return user, err
 }
 
+// GetAllUsers 获取所有用户（含盈亏统计）
 func (r *Repository) GetAllUsers() ([]*model.UserSummary, error) {
 	rows, err := r.db.Query(`
 		SELECT 
 			u.id,
-			u.phone,
-			u.is_active,
+			COALESCE(u.phone, u.username, '未命名') as display_name,
+			COALESCE(u.is_active, 1) as is_active,
+			COALESCE(u.is_api_user, 0) as is_api_user,
 			COALESCE(SUM(CASE WHEN r.is_active = 1 THEN r.amount ELSE 0 END), 0) as total_recharge,
 			COUNT(CASE WHEN r.is_active = 1 THEN r.id END) as recharge_count
 		FROM users u
 		LEFT JOIN recharges r ON u.id = r.user_id
 		WHERE u.is_admin = 0
-		GROUP BY u.id, u.phone, u.is_active
+		GROUP BY u.id
 		ORDER BY u.id DESC
 	`)
 	if err != nil {
@@ -177,10 +179,14 @@ func (r *Repository) GetAllUsers() ([]*model.UserSummary, error) {
 	var users []*model.UserSummary
 	for rows.Next() {
 		user := &model.UserSummary{}
+		var isAPIUser int
+		var isActive int
+
 		err := rows.Scan(
 			&user.UserID,
 			&user.Phone,
-			&user.IsActive,
+			&isActive,
+			&isAPIUser,
 			&user.TotalRecharge,
 			&user.RechargeCount,
 		)
@@ -188,22 +194,29 @@ func (r *Repository) GetAllUsers() ([]*model.UserSummary, error) {
 			return nil, err
 		}
 
-		// 计算当前价值和盈亏
-		currentValue := user.TotalRecharge
-		recharges, _ := r.GetRechargesByUserID(user.UserID)
-		for _, rech := range recharges {
-			if !rech.IsActive {
-				continue
+		user.IsActive = (isActive == 1)
+
+		// API用户不计算盈亏
+		if isAPIUser == 1 {
+			user.CurrentValue = 0
+			user.TotalProfit = 0
+		} else {
+			// 普通用户计算盈亏
+			currentValue := user.TotalRecharge
+			recharges, _ := r.GetRechargesByUserID(user.UserID)
+			for _, rech := range recharges {
+				if !rech.IsActive {
+					continue
+				}
+				latestProfit, _ := r.GetLatestRechargeProfit(rech.ID)
+				if latestProfit != nil {
+					currentValue += latestProfit.Profit
+				}
 			}
-			latestProfit, _ := r.GetLatestRechargeProfit(rech.ID)
-			if latestProfit != nil {
-				rechCurrentValue := rech.Amount * (1 + latestProfit.ProfitRate/100)
-				currentValue += (rechCurrentValue - rech.Amount)
-			}
+			user.CurrentValue = currentValue
+			user.TotalProfit = currentValue - user.TotalRecharge
 		}
 
-		user.CurrentValue = currentValue
-		user.TotalProfit = currentValue - user.TotalRecharge
 		users = append(users, user)
 	}
 

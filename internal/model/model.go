@@ -197,8 +197,9 @@ type RechargeResponse struct {
 type UserSummary struct {
 	UserID        int     `json:"user_id"`
 	Phone         string  `json:"phone"`
-	IsActive      bool    `json:"is_active"` // 确保有这个字段
-	TotalRecharge float64 `json:"total_recharge"`
+	IsActive      bool    `json:"is_active"`      // 确保有这个字段
+	IsAPIUser     bool    `json:"is_api_user"`    // 新增TotalRecharge float64 `json:"total_recharge"`
+	TotalRecharge float64 `json:"total_recharge"` // 必须是float64CurrentValue  float64 `json:"current_value"`
 	CurrentValue  float64 `json:"current_value"`
 	TotalProfit   float64 `json:"total_profit"`
 	RechargeCount int     `json:"recharge_count"`
