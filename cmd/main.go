@@ -136,7 +136,8 @@ func main() {
 			auth.GET("/dashboard/recharge/:id/history", h.GetRechargeHistory)
 			auth.POST("/dashboard/refresh", h.DashboardManualRefresh)
 			// API用户Dashboard
-			auth.GET("/dashboard/api", h.GetAPIDashboard) // ← 新增
+			auth.GET("/dashboard/api", h.GetAPIDashboard)   // ← 新增
+			auth.POST("/dashboard/api/keys", h.SaveAPIKeys) // 保存API密钥
 			// 管理员接口
 			admin := auth.Group("", h.AdminMiddleware())
 			{

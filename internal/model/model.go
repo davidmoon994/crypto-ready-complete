@@ -7,14 +7,18 @@ import (
 // User Dashboard用户（虚拟账本容器）
 type User struct {
 	ID                int       `json:"id"`
-	Phone             string    `json:"phone"`    // 普通用户用手机号，API用户用用户名
-	Username          string    `json:"username"` // 新增：API用户的用户名
+	Phone             string    `json:"phone"`
+	Username          string    `json:"username"`
 	PasswordHash      string    `json:"-"`
 	IsAdmin           bool      `json:"is_admin"`
 	IsActive          bool      `json:"is_active"`
 	IsAPIUser         bool      `json:"is_api_user"`
 	APIAdminAccountID int       `json:"api_admin_account_id"`
 	InitialBalance    float64   `json:"initial_balance"`
+	APIType           string    `json:"api_type"` // 新增
+	APIKey            string    `json:"-"`        // 新增
+	APISecret         string    `json:"-"`        // 新增
+	APIPassphrase     string    `json:"-"`        // 新增
 	CreatedAt         time.Time `json:"created_at"`
 }
 
@@ -202,14 +206,15 @@ type UserSummary struct {
 
 // API用户Dashboard数据
 type APIDashboardData struct {
-	CurrentBalance float64        `json:"current_balance"`  // 当前总资金
-	InitialBalance float64        `json:"initial_balance"`  // 初始本金
-	TotalProfit    float64        `json:"total_profit"`     // 总盈亏
-	ProfitRate     float64        `json:"profit_rate"`      // 盈亏率
-	Positions      []Position     `json:"positions"`        // 当前持仓
-	Orders         []Order        `json:"orders"`           // 当前委托
-	HistoryTrades  []HistoryTrade `json:"history_trades"`   // 历史记录
-	LastUpdateTime string         `json:"last_update_time"` // 最后更新时间
+	HasAPIKeys     bool           `json:"has_api_keys"` // 新增
+	CurrentBalance float64        `json:"current_balance"`
+	InitialBalance float64        `json:"initial_balance"`
+	TotalProfit    float64        `json:"total_profit"`
+	ProfitRate     float64        `json:"profit_rate"`
+	Positions      []Position     `json:"positions"`
+	Orders         []Order        `json:"orders"`
+	HistoryTrades  []HistoryTrade `json:"history_trades"`
+	LastUpdateTime string         `json:"last_update_time"`
 }
 
 // 持仓信息

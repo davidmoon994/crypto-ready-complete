@@ -510,36 +510,20 @@ table {
 
 
 <!-- 模态框 -->
-<div id="apiUserModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000;">
-    <div style="background:white; max-width:500px; margin:100px auto; padding:30px; border-radius:10px;">
+<button class="btn" onclick="showCreateAPIUserModal()">创建API用户</button>
+
+<div id="apiUserModal" class="modal" style="display:none;">
+    <div class="modal-content">
         <h2>创建API用户</h2>
         <form id="createAPIUserForm">
             <div class="form-group">
                 <label>用户名</label>
-                <input type="text" id="apiUserUsername" placeholder="自定义用户名" required>
+                <input type="text" id="apiUsername" required>
             </div>
             <div class="form-group">
                 <label>密码</label>
-                <input type="password" id="apiUserPassword" required>
-            </div>
-            <div class="form-group">
-                <label>API类型</label>
-                <select id="apiUserType" onchange="togglePassphrase()">
-                    <option value="Binance">Binance</option>
-                    <option value="OKX">OKX</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label>API Key</label>
-                <input type="text" id="apiUserKey" required>
-            </div>
-            <div class="form-group">
-                <label>API Secret</label>
-                <input type="text" id="apiUserSecret" required>
-            </div>
-            <div class="form-group" id="passphraseGroup" style="display:none;">
-                <label>Passphrase (OKX必需)</label>
-                <input type="text" id="apiUserPassphrase">
+                <input type="text" id="apiPassword" required>
+                <button type="button" onclick="generatePassword()">生成随机密码</button>
             </div>
             <button type="submit" class="btn">创建</button>
             <button type="button" class="btn" onclick="closeAPIUserModal()">取消</button>
@@ -803,62 +787,49 @@ document.getElementById('depositForm').addEventListener('submit', async (e) => {
     }
 }
        
+function generatePassword() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+    let password = '';
+    for (let i = 0; i < 12; i++) {
+        password += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    document.getElementById('apiPassword').value = password;
+}
+
 function showCreateAPIUserModal() {
-    document.getElementById('apiUserModal').style.display = 'block';
+    document.getElementById('apiUserModal').style.display = 'flex';
+    generatePassword(); // 自动生成密码
 }
 
 function closeAPIUserModal() {
     document.getElementById('apiUserModal').style.display = 'none';
-    document.getElementById('createAPIUserForm').reset();
-}
-
-function togglePassphrase() {
-    const type = document.getElementById('apiUserType').value;
-    const passphraseGroup = document.getElementById('passphraseGroup');
-    passphraseGroup.style.display = type === 'OKX' ? 'block' : 'none';
 }
 
 document.getElementById('createAPIUserForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     
-    const username = document.getElementById('apiUserUsername').value;  // 改为username
-    const password = document.getElementById('apiUserPassword').value;
-    const apiType = document.getElementById('apiUserType').value;
-    const apiKey = document.getElementById('apiUserKey').value;
-    const apiSecret = document.getElementById('apiUserSecret').value;
-    const passphrase = document.getElementById('apiUserPassphrase').value;
+    const username = document.getElementById('apiUsername').value;
+    const password = document.getElementById('apiPassword').value;
     
-    try {
-        const response = await fetch(`${API_URL}/admin/users/api`, {
-            method: 'POST',
-            headers: {
-                'Authorization': authHeader,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                username,  // 改为username
-                password,
-                api_type: apiType,
-                api_key: apiKey,
-                api_secret: apiSecret,
-                passphrase: apiType === 'OKX' ? passphrase : ''
-            })
-        });
-        
+    const response = await fetch(`${API_URL}/admin/users/api`, {
+        method: 'POST',
+        headers: {
+            'Authorization': authHeader,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ username, password })
+    });
+    
+    if (response.ok) {
         const data = await response.json();
-        
-        if (response.ok) {
-            alert(`✓ API用户创建成功！\n用户名: ${username}\n可登录Dashboard查看`);
-            closeAPIUserModal();
-            loadUsers();
-        } else {
-            alert(`❌ 创建失败: ${data.error}`);
-        }
-    } catch (error) {
-        alert(`❌ 网络错误: ${error.message}`);
+        alert(`✓ API用户创建成功！\n\n用户名: ${data.username}\n密码: ${data.password}\n\n请将此信息发送给用户`);
+        closeAPIUserModal();
+        loadUsers();
+    } else {
+        const data = await response.json();
+        alert('❌ ' + data.error);
     }
 });
-
 async function loadUsers() {
     const tbody = document.getElementById('usersBody');
     const select = document.getElementById('rechargeUserId');

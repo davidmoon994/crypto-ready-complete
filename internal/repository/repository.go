@@ -231,6 +231,21 @@ func (r *Repository) GetAllDashboardUsers() ([]*model.User, error) {
 	return users, nil
 }
 
+// UpdateUserAPIKeys 更新用户API密钥
+func (r *Repository) UpdateUserAPIKeys(userID int, apiType, apiKey, apiSecret, passphrase string, initialBalance float64) error {
+	_, err := r.db.Exec(`
+		UPDATE users 
+		SET api_type = ?, 
+		    api_key = ?, 
+		    api_secret = ?, 
+		    api_passphrase = ?,
+		    initial_balance = ?
+		WHERE id = ?`,
+		apiType, apiKey, apiSecret, passphrase, initialBalance, userID,
+	)
+	return err
+}
+
 // AdminAccount operations
 func (r *Repository) GetAdminAccountByID(id int) (*model.AdminAccount, error) {
 	acc := &model.AdminAccount{}

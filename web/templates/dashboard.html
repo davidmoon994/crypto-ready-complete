@@ -836,7 +836,11 @@
     
     // 渲染API用户Dashboard
     function renderAPIDashboard(data) {
-        console.log('API用户数据:', data);
+    // 如果用户还没有设置API密钥
+    if (!data.has_api_keys) {
+        showAPIKeySetupForm();
+        return;
+    }
         
         // 隐藏充值记录section
         const rechargesSection = document.querySelector('.section:has(#rechargesBody)');
@@ -1121,6 +1125,88 @@
         container.insertAdjacentHTML('beforeend', refreshButtonHTML);
     }
     
+    function showAPIKeySetupForm() {
+    const container = document.querySelector('.container');
+    container.innerHTML = `
+        <div class="section">
+            <h2>🔑 设置API密钥</h2>
+            <p style="color: #666; margin-bottom: 20px;">
+                首次使用需要配置您的交易所API密钥，系统将使用此密钥获取您的账户数据。
+            </p>
+            
+            <form id="apiKeyForm">
+                <div class="form-group">
+                    <label>选择交易所</label>
+                    <select id="apiType" onchange="togglePassphraseField()">
+                        <option value="Binance">Binance</option>
+                        <option value="OKX">OKX</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>API Key</label>
+                    <input type="text" id="apiKey" required>
+                </div>
+                
+                <div class="form-group">
+                    <label>API Secret</label>
+                    <input type="password" id="apiSecret" required>
+                </div>
+                
+                <div class="form-group" id="passphraseGroup" style="display:none;">
+                    <label>Passphrase (OKX必需)</label>
+                    <input type="password" id="apiPassphrase">
+                </div>
+                
+                <button type="submit" class="btn">保存并验证</button>
+            </form>
+        </div>
+    `;
+    
+    document.getElementById('apiKeyForm').addEventListener('submit', saveAPIKeys);
+}
+
+function togglePassphraseField() {
+    const apiType = document.getElementById('apiType').value;
+    document.getElementById('passphraseGroup').style.display = 
+        apiType === 'OKX' ? 'block' : 'none';
+}
+
+async function saveAPIKeys(e) {
+    e.preventDefault();
+    
+    const apiType = document.getElementById('apiType').value;
+    const apiKey = document.getElementById('apiKey').value;
+    const apiSecret = document.getElementById('apiSecret').value;
+    const passphrase = document.getElementById('apiPassphrase').value;
+    
+    try {
+        const response = await fetch(`${API_URL}/dashboard/api/keys`, {
+            method: 'POST',
+            headers: {
+                'Authorization': authHeader,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                api_type: apiType,
+                api_key: apiKey,
+                api_secret: apiSecret,
+                passphrase: passphrase
+            })
+        });
+        
+        if (response.ok) {
+            alert('✓ API密钥保存成功！正在加载数据...');
+            location.reload();
+        } else {
+            const data = await response.json();
+            alert('❌ ' + data.error);
+        }
+    } catch (error) {
+        alert('❌ 网络错误: ' + error.message);
+    }
+}
+
     // 刷新API用户数据
     async function refreshAPIData() {
         try {

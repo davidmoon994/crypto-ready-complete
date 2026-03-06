@@ -384,54 +384,29 @@ func (h *Handler) AdminGetRechargeStats(c *gin.Context) {
 	c.JSON(http.StatusOK, stats)
 }
 
-// AdminCreateAPIUser 通过API创建独立的Dashboard用户
+// AdminCreateAPIUser 创建API用户（简化版）
 func (h *Handler) AdminCreateAPIUser(c *gin.Context) {
 	var req struct {
-		Username   string `json:"username" binding:"required"` // 改为username
-		Password   string `json:"password" binding:"required"`
-		APIType    string `json:"api_type" binding:"required"`
-		APIKey     string `json:"api_key" binding:"required"`
-		APISecret  string `json:"api_secret" binding:"required"`
-		Passphrase string `json:"passphrase"`
+		Username string `json:"username" binding:"required"`
+		Password string `json:"password" binding:"required"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误: " + err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
 		return
 	}
 
-	// 验证API类型
-	if req.APIType != "Binance" && req.APIType != "OKX" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "API类型只能是 Binance 或 OKX"})
-		return
-	}
-
-	// OKX必须提供Passphrase
-	if req.APIType == "OKX" && req.Passphrase == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "OKX账户必须提供Passphrase"})
-		return
-	}
-
-	// 创建API用户
-	userID, adminAccountID, err := h.service.CreateAPIUser(
-		req.Username, // 传入username
-		req.Password,
-		req.APIType,
-		req.APIKey,
-		req.APISecret,
-		req.Passphrase,
-	)
+	userID, err := h.service.CreateAPIUser(req.Username, req.Password)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message":          "API用户创建成功",
-		"user_id":          userID,
-		"admin_account_id": adminAccountID,
-		"login_username":   req.Username, // 返回username
-		"dashboard_url":    "/dashboard",
+		"message":  "API用户创建成功",
+		"user_id":  userID,
+		"username": req.Username,
+		"password": req.Password, // 返回密码给Admin，让Admin转发给用户
 	})
 }
 
@@ -447,6 +422,32 @@ func (h *Handler) GetAPIDashboard(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, data)
+}
+
+// SaveAPIKeys API用户保存API密钥
+func (h *Handler) SaveAPIKeys(c *gin.Context) {
+	userIDStr, _ := c.Get("userID")
+	userID := userIDStr.(int)
+
+	var req struct {
+		APIType    string `json:"api_type" binding:"required"`
+		APIKey     string `json:"api_key" binding:"required"`
+		APISecret  string `json:"api_secret" binding:"required"`
+		Passphrase string `json:"passphrase"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		return
+	}
+
+	err := h.service.SaveUserAPIKeys(userID, req.APIType, req.APIKey, req.APISecret, req.Passphrase)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "API密钥保存成功"})
 }
 
 // AdminDepositToExchange Admin直接充值到交易所（进入系统账户）

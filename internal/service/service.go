@@ -77,61 +77,26 @@ func (s *Service) AdminCreateUser(phone string) (int64, error) {
 }
 
 // CreateAPIUser 创建API用户（独立Admin账户）
-func (s *Service) CreateAPIUser(username, password, apiType, apiKey, apiSecret, passphrase string) (int64, int, error) {
+// CreateAPIUser 创建API用户（简化版：不需要API密钥）
+func (s *Service) CreateAPIUser(username, password string) (int64, error) {
 	// 1. 检查用户名是否已存在
 	existingUser, err := s.repo.GetUserByUsername(username)
 	if err != nil {
-		return 0, 0, err
+		return 0, err
 	}
 	if existingUser != nil {
-		return 0, 0, errors.New("该用户名已被使用")
+		return 0, errors.New("该用户名已被使用")
 	}
 
-	// 2. 创建独立的Admin账户
-	adminAccountID, err := s.repo.CreateAdminAccount(apiType, apiKey, apiSecret, passphrase)
-	if err != nil {
-		return 0, 0, fmt.Errorf("创建Admin账户失败: %v", err)
-	}
-
-	// 3. 测试API并获取初始余额
-	adminAccount, err := s.repo.GetAdminAccountByID(adminAccountID)
-	if err != nil {
-		s.repo.DeleteAdminAccount(adminAccountID)
-		return 0, 0, err
-	}
-
-	initialBalance, err := s.walletService.GetBalance(adminAccount)
-	if err != nil {
-		s.repo.DeleteAdminAccount(adminAccountID)
-		return 0, 0, fmt.Errorf("API验证失败: %v", err)
-	}
-
-	// 4. 初始化账户
-	s.repo.UpdateAdminAccountBalance(adminAccountID, initialBalance)
-	s.repo.UpdateAdminAccountShares(adminAccountID, initialBalance)
-
-	fmt.Printf("✓ API账户验证成功，初始余额: $%.2f\n", initialBalance)
-
-	// 5. 为原有资金创建系统充值记录
-	if initialBalance > 0 {
-		_, err = s.repo.CreateRechargeWithShares(0, adminAccountID, initialBalance, "USDT", 0.0, initialBalance)
-		if err != nil {
-			s.repo.DeleteAdminAccount(adminAccountID)
-			return 0, 0, fmt.Errorf("初始化系统份额失败: %v", err)
-		}
-	}
-
-	// 6. 创建用户（记录初始余额和用户名）
+	// 2. 创建API用户（不关联Admin账户，initial_balance=0）
 	passwordHash := hashPassword(password)
-	userID, err := s.repo.CreateAPIUser(username, passwordHash, adminAccountID, initialBalance)
+	userID, err := s.repo.CreateAPIUser(username, passwordHash, 0, 0) // admin_account_id=0表示未绑定
 	if err != nil {
-		s.repo.DeleteAdminAccount(adminAccountID)
-		return 0, 0, fmt.Errorf("创建用户失败: %v", err)
+		return 0, fmt.Errorf("创建用户失败: %v", err)
 	}
 
-	fmt.Printf("✓ API用户创建成功: %s (初始本金: $%.2f)\n", username, initialBalance)
-
-	return userID, adminAccountID, nil
+	fmt.Printf("✓ API用户创建成功: %s\n", username)
+	return userID, nil
 }
 
 // AdminRecharge 管理员为用户充值
@@ -896,6 +861,31 @@ func (s *Service) GetDashboardRecharges(userID int) ([]*model.RechargeResponse, 
 	return result, nil
 }
 
+// SaveUserAPIKeys 保存用户API密钥并验证
+func (s *Service) SaveUserAPIKeys(userID int, apiType, apiKey, apiSecret, passphrase string) error {
+	// 验证API密钥
+	testAccount := &model.AdminAccount{
+		AccountType: apiType,
+		APIKey:      apiKey,
+		APISecret:   apiSecret,
+		Passphrase:  passphrase,
+	}
+
+	initialBalance, err := s.walletService.GetBalance(testAccount)
+	if err != nil {
+		return fmt.Errorf("API验证失败: %v", err)
+	}
+
+	// 保存API密钥和初始余额
+	err = s.repo.UpdateUserAPIKeys(userID, apiType, apiKey, apiSecret, passphrase, initialBalance)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("✓ 用户 %d API密钥保存成功，初始余额: $%.2f\n", userID, initialBalance)
+	return nil
+}
+
 // GetUserDetail 获取用户详情（含充值记录）
 func (s *Service) GetUserDetail(userID int) (*model.UserDetailResponse, error) {
 	user, err := s.repo.GetUserByID(userID)
@@ -1039,7 +1029,6 @@ func (s *Service) GetRechargeStatistics() (*model.RechargeStatistics, error) {
 
 // GetAPIDashboardData 获取API用户Dashboard数据
 func (s *Service) GetAPIDashboardData(userID int) (*model.APIDashboardData, error) {
-	// 获取用户信息
 	user, err := s.repo.GetUserByID(userID)
 	if err != nil {
 		return nil, err
@@ -1048,28 +1037,29 @@ func (s *Service) GetAPIDashboardData(userID int) (*model.APIDashboardData, erro
 		return nil, errors.New("用户不存在")
 	}
 
-	// 确认是API用户
-	if !user.IsAPIUser || user.APIAdminAccountID == 0 {
+	if !user.IsAPIUser {
 		return nil, errors.New("非API用户")
 	}
 
-	// 获取Admin账户
-	adminAccount, err := s.repo.GetAdminAccountByID(user.APIAdminAccountID)
-	if err != nil {
-		return nil, err
-	}
-	if adminAccount == nil {
-		return nil, errors.New("API账户不存在")
+	// 🔥 检查是否已设置API密钥
+	if user.APIKey == "" || user.APISecret == "" {
+		return &model.APIDashboardData{
+			HasAPIKeys: false, // 标记未设置API密钥
+		}, nil
 	}
 
-	// 获取当前余额
-	currentBalance, err := s.walletService.GetBalance(adminAccount)
+	// 🔥 使用用户自己的API密钥查询
+	userAccount := &model.AdminAccount{
+		AccountType: user.APIType,
+		APIKey:      user.APIKey,
+		APISecret:   user.APISecret,
+		Passphrase:  user.APIPassphrase,
+	}
+
+	currentBalance, err := s.walletService.GetBalance(userAccount)
 	if err != nil {
 		return nil, fmt.Errorf("获取余额失败: %v", err)
 	}
-
-	// 更新数据库中的余额
-	s.repo.UpdateAdminAccountBalance(user.APIAdminAccountID, currentBalance)
 
 	// 计算盈亏
 	totalProfit := currentBalance - user.InitialBalance
@@ -1078,28 +1068,13 @@ func (s *Service) GetAPIDashboardData(userID int) (*model.APIDashboardData, erro
 		profitRate = (totalProfit / user.InitialBalance) * 100
 	}
 
-	// 获取持仓列表（最近20单）
-	positions, err := s.walletService.GetPositions(adminAccount, 20)
-	if err != nil {
-		fmt.Printf("⚠️  获取持仓失败: %v\n", err)
-		positions = []model.Position{}
-	}
+	// 获取持仓、委托、历史
+	positions, _ := s.walletService.GetPositions(userAccount, 20)
+	orders, _ := s.walletService.GetOrders(userAccount, 20)
+	historyTrades, _ := s.walletService.GetHistoryTrades(userAccount, 50)
 
-	// 获取委托列表（最近20单）
-	orders, err := s.walletService.GetOrders(adminAccount, 20)
-	if err != nil {
-		fmt.Printf("⚠️  获取委托失败: %v\n", err)
-		orders = []model.Order{}
-	}
-
-	// 获取历史记录（50条）
-	historyTrades, err := s.walletService.GetHistoryTrades(adminAccount, 50)
-	if err != nil {
-		fmt.Printf("⚠️  获取历史记录失败: %v\n", err)
-		historyTrades = []model.HistoryTrade{}
-	}
-
-	data := &model.APIDashboardData{
+	return &model.APIDashboardData{
+		HasAPIKeys:     true,
 		CurrentBalance: currentBalance,
 		InitialBalance: user.InitialBalance,
 		TotalProfit:    totalProfit,
@@ -1108,7 +1083,5 @@ func (s *Service) GetAPIDashboardData(userID int) (*model.APIDashboardData, erro
 		Orders:         orders,
 		HistoryTrades:  historyTrades,
 		LastUpdateTime: time.Now().Format("2006-01-02 15:04:05"),
-	}
-
-	return data, nil
+	}, nil
 }
