@@ -739,11 +739,19 @@ func (r *Repository) UpdateUserStatus(userID int, isActive bool) error {
 func (r *Repository) GetUserByID(userID int) (*model.User, error) {
 	user := &model.User{}
 	err := r.db.QueryRow(`
-		SELECT id, phone, password_hash, is_admin, 
+		SELECT id, 
+		       COALESCE(phone, ''),
+		       COALESCE(username, ''),
+		       password_hash, 
+		       is_admin, 
 		       COALESCE(is_active, 1), 
 		       COALESCE(is_api_user, 0), 
 		       COALESCE(api_admin_account_id, 0),
 		       COALESCE(initial_balance, 0),
+		       COALESCE(api_type, ''),
+		       COALESCE(api_key, ''),
+		       COALESCE(api_secret, ''),
+		       COALESCE(api_passphrase, ''),
 		       created_at 
 		FROM users 
 		WHERE id = ?`,
@@ -751,15 +759,19 @@ func (r *Repository) GetUserByID(userID int) (*model.User, error) {
 	).Scan(
 		&user.ID,
 		&user.Phone,
+		&user.Username, // 新增
 		&user.PasswordHash,
 		&user.IsAdmin,
 		&user.IsActive,
-		&user.IsAPIUser,         // 必须有
-		&user.APIAdminAccountID, // 必须有
-		&user.InitialBalance,    // 必须有
+		&user.IsAPIUser,
+		&user.APIAdminAccountID,
+		&user.InitialBalance,
+		&user.APIType,       // 新增
+		&user.APIKey,        // 新增
+		&user.APISecret,     // 新增
+		&user.APIPassphrase, // 新增
 		&user.CreatedAt,
 	)
-
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
