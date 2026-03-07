@@ -676,6 +676,14 @@ table {
     </div>
 
     <script>
+ // 全局ESC关闭模态框
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        document.querySelectorAll('.modal').forEach(modal => {
+            modal.style.display = 'none';
+        });
+    }
+});       
         const API_URL = window.location.origin + '/api';
         let authHeader = '';
         
@@ -1469,6 +1477,13 @@ if (checkAuth()) {
         loadRechargeStats();
     }, 30000);
 }
+
+// 点击遮罩层关闭
+document.addEventListener('click', function(e) {
+    if (e.target.classList.contains('modal')) {
+        e.target.style.display = 'none';
+    }
+});
 
     </script>
 </body>
