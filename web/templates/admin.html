@@ -679,16 +679,36 @@ table {
         const API_URL = window.location.origin + '/api';
         let authHeader = '';
         
-     function checkAuth() {
-            const phone = localStorage.getItem('phone');
-            const password = localStorage.getItem('password');
-            if (!phone || !password || phone !== 'admin') {
-                window.location.href = '/';
-                return false;
-            }
-            authHeader = 'Basic ' + btoa(phone + ':' + password);
-            return true;
-        }
+ function checkAuth() {
+    const phone = localStorage.getItem('phone');
+    const password = localStorage.getItem('password');
+    const isActive = localStorage.getItem('isActive');
+    
+    if (!phone || !password) {
+        window.location.href = '/';
+        return false;
+    }
+    
+    // 支持中文的Base64编码
+    function utf8_to_b64(str) {
+        return btoa(unescape(encodeURIComponent(str)));
+    }
+    
+    authHeader = 'Basic ' + utf8_to_b64(phone + ':' + password);
+    
+    // 其余代码保持不变...
+    const userPhoneEl = document.getElementById('userPhone');
+    if (userPhoneEl) {
+        userPhoneEl.textContent = phone;
+    }
+    
+    const statusEl = document.getElementById('userStatus');
+    if (statusEl && isActive === 'false') {
+        statusEl.innerHTML = '<span style="background: #ef4444; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px;">⚠️ 账户已停用</span>';
+    }
+    
+    return true;
+}
         
         function showDepositModal() {
     document.getElementById('depositModal').style.display = 'flex';

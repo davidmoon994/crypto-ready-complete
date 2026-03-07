@@ -188,14 +188,14 @@
         // 动态获取API地址
         const API_URL = window.location.origin + '/api';
     
-        function showMessage(text, type) {
+ function showMessage(text, type) {
             const msg = document.getElementById('message');
             msg.textContent = text;
             msg.className = `message ${type}`;
             msg.style.display = 'block';
         }
     
-        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+ document.getElementById('loginForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
             const phone = document.getElementById('phone').value;
@@ -224,6 +224,36 @@
                 showMessage('网络错误：' + error.message, 'error');
             }
         });
+function checkAuth() {
+    const phone = localStorage.getItem('phone');
+    const password = localStorage.getItem('password');
+    const isActive = localStorage.getItem('isActive');
+    
+    if (!phone || !password) {
+        window.location.href = '/';
+        return false;
+    }
+    
+    // 支持中文的Base64编码
+    function utf8_to_b64(str) {
+        return btoa(unescape(encodeURIComponent(str)));
+    }
+    
+    authHeader = 'Basic ' + utf8_to_b64(phone + ':' + password);
+    
+    // 其余代码保持不变...
+    const userPhoneEl = document.getElementById('userPhone');
+    if (userPhoneEl) {
+        userPhoneEl.textContent = phone;
+    }
+    
+    const statusEl = document.getElementById('userStatus');
+    if (statusEl && isActive === 'false') {
+        statusEl.innerHTML = '<span style="background: #ef4444; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px;">⚠️ 账户已停用</span>';
+    }
+    
+    return true;
+}
     </script>
 </body>
 </html>

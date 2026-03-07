@@ -568,7 +568,7 @@
     let authHeader = '';
     
     // 检查认证
-    function checkAuth() {
+function checkAuth() {
         const phone = localStorage.getItem('phone');
         const password = localStorage.getItem('password');
         const isActive = localStorage.getItem('isActive');
@@ -577,7 +577,12 @@
             window.location.href = '/';
             return false;
         }
-        
+        // 支持中文的Base64编码
+function utf8_to_b64(str) {
+    return btoa(unescape(encodeURIComponent(str)));
+}
+
+authHeader = 'Basic ' + utf8_to_b64(phone + ':' + password);
         authHeader = 'Basic ' + btoa(phone + ':' + password);
         
         const userPhoneEl = document.getElementById('userPhone');
@@ -595,7 +600,7 @@
     }
     
     // ========== 普通用户Dashboard函数 ==========
-    async function loadSummary() {
+async function loadSummary() {
         const response = await fetch(`${API_URL}/dashboard/summary`, { 
             headers: { 'Authorization': authHeader } 
         });
@@ -638,7 +643,7 @@
         }
     }
     
-    async function loadRecharges() {
+async function loadRecharges() {
         const tbody = document.getElementById('rechargesBody');
         
         if (!tbody) {
@@ -753,7 +758,7 @@
         }
     }
     
-    async function viewHistory(rechargeId) {
+async function viewHistory(rechargeId) {
         document.getElementById('historyModal').classList.add('active');
         const response = await fetch(`${API_URL}/dashboard/recharge/${rechargeId}/history`, { 
             headers: { 'Authorization': authHeader } 
@@ -780,11 +785,11 @@
         }
     }
     
-    function closeHistoryModal() { 
+function closeHistoryModal() { 
         document.getElementById('historyModal').classList.remove('active'); 
     }
     
-    async function refresh() {
+async function refresh() {
         await fetch(`${API_URL}/dashboard/refresh`, {
             method: 'POST',
             headers: { 'Authorization': authHeader }
@@ -793,7 +798,7 @@
         loadRecharges();
     }
     
-    function logout() {
+function logout() {
         localStorage.clear();
         window.location.href = '/';
     }
@@ -801,7 +806,7 @@
     // ========== API用户Dashboard函数 ==========
     
     // 检查用户类型
-    async function checkUserType() {
+async function checkUserType() {
         try {
             const response = await fetch(`${API_URL}/dashboard/api`, {
                 headers: { 'Authorization': authHeader }
@@ -823,7 +828,7 @@
     }
     
     // 普通用户Dashboard
-    function loadNormalDashboard() {
+function loadNormalDashboard() {
         loadSummary();
         loadRecharges();
         
@@ -835,7 +840,7 @@
     }
     
     // 渲染API用户Dashboard
-    function renderAPIDashboard(data) {
+function renderAPIDashboard(data) {
     // 如果用户还没有设置API密钥
     if (!data.has_api_keys) {
         showAPIKeySetupForm();
@@ -893,7 +898,7 @@
     }
     
     // 创建API交易信息区域
-    function createAPITradingSection(data) {
+function createAPITradingSection(data) {
         const container = document.querySelector('.container');
         
         // 持仓列表
@@ -1115,7 +1120,7 @@
     }
     
     // 添加API刷新按钮
-    function addAPIRefreshButton() {
+function addAPIRefreshButton() {
         const container = document.querySelector('.container');
         const refreshButtonHTML = `
             <div style="text-align: center; margin: 20px 0;">
@@ -1125,7 +1130,7 @@
         container.insertAdjacentHTML('beforeend', refreshButtonHTML);
     }
     
-    function showAPIKeySetupForm() {
+function showAPIKeySetupForm() {
     const container = document.querySelector('.container');
     container.innerHTML = `
         <div class="section">
@@ -1208,7 +1213,7 @@ async function saveAPIKeys(e) {
 }
 
     // 刷新API用户数据
-    async function refreshAPIData() {
+ async function refreshAPIData() {
         try {
             const response = await fetch(`${API_URL}/dashboard/api`, {
                 headers: { 'Authorization': authHeader }
