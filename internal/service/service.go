@@ -321,8 +321,10 @@ func (s *Service) DeleteRecharge(rechargeID int) error {
 		return err
 	}
 
-	// 3. 标记为删除
-	err = s.repo.DeactivateRecharge(rechargeID)
+	// 3. 🔥 直接使用SQL更新，不调用DeactivateRecharge
+	// err = s.repo.DeactivateRecharge(rechargeID)  // 删除这行
+	// 改为：
+	err = s.repo.UpdateRechargeActive(rechargeID, false)
 	if err != nil {
 		return err
 	}

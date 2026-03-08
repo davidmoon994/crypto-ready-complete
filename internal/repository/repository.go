@@ -369,6 +369,22 @@ func (r *Repository) UpdateAdminAccountBalance(id int, balance float64) error {
 	return err
 }
 
+// UpdateRechargeActive 更新充值记录活跃状态
+func (r *Repository) UpdateRechargeActive(rechargeID int, isActive bool) error {
+	activeValue := 0
+	if isActive {
+		activeValue = 1
+	}
+
+	_, err := r.db.Exec(`
+		UPDATE recharges 
+		SET is_active = ? 
+		WHERE id = ?`,
+		activeValue, rechargeID,
+	)
+	return err
+}
+
 // AdminAccountBalance operations
 func (r *Repository) SaveAdminAccountBalance(accountID int, date string, balance, change, changeRate float64) error {
 	_, err := r.db.Exec(
