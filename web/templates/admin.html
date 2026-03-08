@@ -449,31 +449,55 @@ table {
             </div>
         </div>
             
-            <div class="section">
-                <h2>👥 用户管理</h2>
-                <div style="margin-bottom: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
-                    <button class="btn" onclick="showCreateUserModal()">➕ 创建用户</button>
-                    <button class="btn" onclick="showRechargeModal()">💰 充值</button>
-                    <button class="btn" onclick="showCreateAPIUserModal()">创建API用户</button>
-                </div>
-                
-                <div class="table-container">
-                    <table id="usersTable">
-                        <thead>
-                            <tr>
-                                <th>手机号</th>
-                                <th class="hide-mobile">总充值</th>
-                                <th class="hide-mobile">当前价值</th>
-                                <th>盈亏</th>
-                                <th class="hide-mobile">笔数</th>
-                                <th class="hide-mobile">状态</th>
-                                <th>操作</th>
-                            </tr>
-                        </thead>
-                        <tbody id="usersBody"></tbody>
-                    </table>
-                </div>
-            </div>
+            <!-- 3. 普通Dashboard用户管理 -->
+<div class="section">
+    <h2>📱 普通Dashboard用户</h2>
+    <div style="margin-bottom: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
+        <button class="btn" onclick="showCreateUserModal()">➕ 创建普通用户</button>
+        <button class="btn" onclick="showRechargeModal()">💰 充值</button>
+    </div>
+    
+    <div class="table-container">
+        <table id="normalUsersTable">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>手机号</th>
+                    <th class="hide-mobile">总充值</th>
+                    <th class="hide-mobile">当前价值</th>
+                    <th>盈亏</th>
+                    <th class="hide-mobile">笔数</th>
+                    <th class="hide-mobile">状态</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="normalUsersBody"></tbody>
+        </table>
+    </div>
+</div>
+
+<!-- 4. API用户管理 -->
+<div class="section">
+    <h2>🔑 API用户</h2>
+    <div style="margin-bottom: 15px;">
+        <button class="btn" onclick="showCreateAPIUserModal()">➕ 创建API用户</button>
+    </div>
+    
+    <div class="table-container">
+        <table id="apiUsersTable">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>用户名</th>
+                    <th>创建时间</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="apiUsersBody"></tbody>
+        </table>
+    </div>
+</div>
     
 <!-- 充值到交易所模态框 -->
 <div id="depositModal" class="modal">
@@ -687,7 +711,7 @@ document.addEventListener('keydown', function(e) {
         const API_URL = window.location.origin + '/api';
         let authHeader = '';
         
- function checkAuth() {
+function checkAuth() {
     const phone = localStorage.getItem('phone');
     const password = localStorage.getItem('password');
     const isActive = localStorage.getItem('isActive');
@@ -704,7 +728,6 @@ document.addEventListener('keydown', function(e) {
     
     authHeader = 'Basic ' + utf8_to_b64(phone + ':' + password);
     
-    // 其余代码保持不变...
     const userPhoneEl = document.getElementById('userPhone');
     if (userPhoneEl) {
         userPhoneEl.textContent = phone;
@@ -718,7 +741,7 @@ document.addEventListener('keydown', function(e) {
     return true;
 }
         
-        function showDepositModal() {
+function showDepositModal() {
     document.getElementById('depositModal').style.display = 'flex';
 }
 
@@ -858,171 +881,7 @@ document.getElementById('createAPIUserForm').addEventListener('submit', async (e
         alert('❌ ' + data.error);
     }
 });
-async function loadUsers() {
-    const tbody = document.getElementById('usersBody');
-    const select = document.getElementById('rechargeUserId');
-    
-    if (!tbody) {
-        console.error('usersBody 元素不存在');
-        return;
-    }
-    
-    try {
-        const response = await fetch(`${API_URL}/admin/users`, { 
-            headers: { 'Authorization': authHeader } 
-        });
-        
-        if (!response.ok) {
-            console.error('获取用户列表失败，状态码：', response.status);
-            tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #ef4444;">加载失败</td></tr>';
-            return;
-        }
-        
-        const data = await response.json();
-        
-        if (!data.users || data.users.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #999;">暂无用户数据</td></tr>';
-            if (select) select.innerHTML = '<option value="">选择用户</option>';
-            return;
-        }
-        
-        const isMobile = window.innerWidth <= 768;
-        
-        if (isMobile) {
-            // 移动端卡片布局
-            tbody.innerHTML = data.users.map(u => {
-                // 🔥 API用户特殊显示
-                if (u.is_api_user) {
-                    return `
-                        <tr>
-                            <td colspan="7">
-                                <div class="mobile-card" style="background: #fffbeb;">
-                                    <div class="mobile-card-row">
-                                        <span class="mobile-card-label">🔑 API用户</span>
-                                        <span class="mobile-card-value">${u.phone || '未命名'}</span>
-                                    </div>
-                                    <div class="mobile-card-row">
-                                        <span class="mobile-card-label">状态</span>
-                                        <span class="mobile-card-value">${u.is_active ? 'API活跃' : 'API停用'}</span>
-                                    </div>
-                                    <div class="mobile-card-row">
-                                        <button class="btn" onclick="toggleUserStatus(${u.user_id})" style="width: 100%;">
-                                            ${u.is_active ? '停用' : '启用'}
-                                        </button>
-                                    </div>
-                                </div>
-                            </td>
-                        </tr>
-                    `;
-                }
-                
-                // 普通用户
-                return `
-                    <tr>
-                        <td colspan="7">
-                            <div class="mobile-card">
-                                <div class="mobile-card-row">
-                                    <span class="mobile-card-label">手机号</span>
-                                    <span class="mobile-card-value">${u.phone}</span>
-                                </div>
-                                <div class="mobile-card-row">
-                                    <span class="mobile-card-label">总充值</span>
-                                    <span class="mobile-card-value">$${u.total_recharge.toFixed(2)}</span>
-                                </div>
-                                <div class="mobile-card-row">
-                                    <span class="mobile-card-label">当前价值</span>
-                                    <span class="mobile-card-value">$${u.current_value.toFixed(2)}</span>
-                                </div>
-                                <div class="mobile-card-row">
-                                    <span class="mobile-card-label">盈亏</span>
-                                    <span class="mobile-card-value" style="color: ${u.total_profit >= 0 ? '#10b981' : '#ef4444'}">
-                                        ${u.total_profit >= 0 ? '+' : ''}$${u.total_profit.toFixed(2)}
-                                    </span>
-                                </div>
-                                <div class="mobile-card-row">
-                                    <span class="mobile-card-label">状态</span>
-                                    <span class="mobile-card-value">${u.is_active ? '活跃' : '停用'}</span>
-                                </div>
-                                <div class="mobile-card-row">
-                                    <button class="btn" onclick="showRechargeModal(${u.user_id})" style="width: 100%; margin-bottom: 5px;">充值</button>
-                                    <button class="btn" onclick="toggleUserStatus(${u.user_id})" style="width: 100%;">
-                                        ${u.is_active ? '停用' : '启用'}
-                                    </button>
-                                </div>
-                            </div>
-                        </td>
-                    </tr>
-                `;
-            }).join('');
-        } else {
-            // 桌面端表格布局
-            tbody.innerHTML = data.users.map(u => {
-                // 🔥 API用户特殊显示
-                if (u.is_api_user) {
-                    return `
-                        <tr style="background: #fffbeb;">
-                            <td>${u.user_id}</td>
-                            <td>🔑 ${u.phone || '未命名'}</td>
-                            <td colspan="3" style="text-align: center; color: #666; font-style: italic;">
-                                API用户（独立账户）
-                            </td>
-                            <td>
-                                <span class="badge ${u.is_active ? 'active' : 'inactive'}">
-                                    ${u.is_active ? 'API活跃' : 'API停用'}
-                                </span>
-                            </td>
-                            <td>
-                                <button class="btn-small" onclick="toggleUserStatus(${u.user_id})">
-                                    ${u.is_active ? '停用' : '启用'}
-                                </button>
-                            </td>
-                        </tr>
-                    `;
-                }
-                
-                // 普通用户
-                const profitColor = u.total_profit >= 0 ? '#10b981' : '#ef4444';
-                const profitSign = u.total_profit >= 0 ? '+' : '';
-                
-                return `
-                    <tr>
-                        <td>${u.user_id}</td>
-                        <td>${u.phone}</td>
-                        <td>$${u.total_recharge.toFixed(2)}</td>
-                        <td>$${u.current_value.toFixed(2)}</td>
-                        <td style="color: ${profitColor}">
-                            ${profitSign}$${u.total_profit.toFixed(2)}
-                        </td>
-                        <td>
-                            <span class="badge ${u.is_active ? 'active' : 'inactive'}">
-                                ${u.is_active ? '活跃' : '停用'}
-                            </span>
-                        </td>
-                        <td>
-                            <button class="btn-small" onclick="showRechargeModal(${u.user_id})">充值</button>
-                            <button class="btn-small" onclick="toggleUserStatus(${u.user_id})">
-                                ${u.is_active ? '停用' : '启用'}
-                            </button>
-                        </td>
-                    </tr>
-                `;
-            }).join('');
-        }
-        
-        // 🔥 更新充值用户下拉框（只显示普通用户）
-        if (select) {
-            const normalUsers = data.users.filter(u => !u.is_api_user);
-            select.innerHTML = '<option value="">选择用户</option>' + 
-                normalUsers.map(u => `<option value="${u.user_id}">${u.phone}</option>`).join('');
-        }
-    } catch (error) {
-        console.error('加载用户列表失败：', error);
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #ef4444;">加载失败</td></tr>';
-    }
-}
 
-// 监听窗口大小变化，重新加载
-let resizeTimer;
 window.addEventListener('resize', () => {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
@@ -1031,12 +890,24 @@ window.addEventListener('resize', () => {
 });
 
         
-        function showConfigModal() { document.getElementById('configModal').classList.add('active'); }
-        function closeConfigModal() { document.getElementById('configModal').classList.remove('active'); }
-        function showCreateUserModal() { document.getElementById('createUserModal').classList.add('active'); }
-        function closeCreateUserModal() { document.getElementById('createUserModal').classList.remove('active'); }
-        function showRechargeModal() { document.getElementById('rechargeModal').classList.add('active'); }
-        function closeRechargeModal() { document.getElementById('rechargeModal').classList.remove('active'); }
+function showConfigModal() { document.getElementById('configModal').classList.add('active'); }
+function closeConfigModal() { document.getElementById('configModal').classList.remove('active'); }
+function showCreateUserModal() { document.getElementById('createUserModal').classList.add('active'); }
+function closeCreateUserModal() { document.getElementById('createUserModal').classList.remove('active'); }
+function showRechargeModal(userID) {
+    document.getElementById('rechargeModal').classList.add('active');
+    
+    // 如果传入了userID，自动选中
+    if (userID) {
+        setTimeout(() => {
+            const select = document.getElementById('rechargeUserId');
+            if (select) {
+                select.value = userID;
+            }
+        }, 100);
+    }
+}
+function closeRechargeModal() { document.getElementById('rechargeModal').classList.remove('active'); }
      
       // 查看用户详情
 async function viewUserDetail(userId) {
@@ -1175,6 +1046,193 @@ async function getUserInfo(userId) {
     return null;
 }
 
+async function loadUsers() {
+    const normalTbody = document.getElementById('normalUsersBody');
+    const apiTbody = document.getElementById('apiUsersBody');
+    const select = document.getElementById('rechargeUserId');
+    
+    if (!normalTbody || !apiTbody) {
+        console.error('用户表格元素不存在');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_URL}/admin/users`, { 
+            headers: { 'Authorization': authHeader } 
+        });
+        
+        if (!response.ok) {
+            console.error('获取用户列表失败，状态码：', response.status);
+            normalTbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 20px; color: #ef4444;">加载失败</td></tr>';
+            apiTbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: #ef4444;">加载失败</td></tr>';
+            return;
+        }
+        
+        const data = await response.json();
+        
+        if (!data.users || data.users.length === 0) {
+            normalTbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 20px; color: #999;">暂无普通用户</td></tr>';
+            apiTbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: #999;">暂无API用户</td></tr>';
+            if (select) select.innerHTML = '<option value="">选择用户</option>';
+            return;
+        }
+        
+        // 🔥 分离普通用户和API用户（排除系统账户user_id=0）
+        const normalUsers = data.users.filter(u => !u.is_api_user && u.user_id !== 0);
+        const apiUsers = data.users.filter(u => u.is_api_user);
+        
+        const isMobile = window.innerWidth <= 768;
+        
+        // 🔥 渲染普通用户
+        if (normalUsers.length === 0) {
+            normalTbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 20px; color: #999;">暂无普通用户</td></tr>';
+        } else {
+            if (isMobile) {
+                // 移动端卡片布局
+                normalTbody.innerHTML = normalUsers.map(u => `
+                    <tr>
+                        <td colspan="8">
+                            <div class="mobile-card">
+                                <div class="mobile-card-row">
+                                    <span class="mobile-card-label">手机号</span>
+                                    <span class="mobile-card-value">${u.phone}</span>
+                                </div>
+                                <div class="mobile-card-row">
+                                    <span class="mobile-card-label">总充值</span>
+                                    <span class="mobile-card-value">$${u.total_recharge.toFixed(2)}</span>
+                                </div>
+                                <div class="mobile-card-row">
+                                    <span class="mobile-card-label">当前价值</span>
+                                    <span class="mobile-card-value">$${u.current_value.toFixed(2)}</span>
+                                </div>
+                                <div class="mobile-card-row">
+                                    <span class="mobile-card-label">盈亏</span>
+                                    <span class="mobile-card-value" style="color: ${u.total_profit >= 0 ? '#10b981' : '#ef4444'}">
+                                        ${u.total_profit >= 0 ? '+' : ''}$${u.total_profit.toFixed(2)}
+                                    </span>
+                                </div>
+                                <div class="mobile-card-row">
+                                    <span class="mobile-card-label">状态</span>
+                                    <span class="mobile-card-value">${u.is_active ? '活跃' : '停用'}</span>
+                                </div>
+                                <div class="mobile-card-row">
+                                    <button class="btn" onclick="showRechargeModal(${u.user_id})" style="width: 100%; margin-bottom: 5px;">充值</button>
+                                    <button class="btn" onclick="viewUserDetail(${u.user_id})" style="width: 100%; margin-bottom: 5px;">详情</button>
+                                    <button class="btn" onclick="toggleUserStatus(${u.user_id})" style="width: 100%;">
+                                        ${u.is_active ? '停用' : '启用'}
+                                    </button>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                `).join('');
+            } else {
+                // 桌面端表格布局
+                normalTbody.innerHTML = normalUsers.map(u => {
+                    const profitColor = u.total_profit >= 0 ? '#10b981' : '#ef4444';
+                    const profitSign = u.total_profit >= 0 ? '+' : '';
+                    
+                    return `
+                        <tr>
+                            <td>${u.user_id}</td>
+                            <td>${u.phone}</td>
+                            <td>$${u.total_recharge.toFixed(2)}</td>
+                            <td>$${u.current_value.toFixed(2)}</td>
+                            <td style="color: ${profitColor}">
+                                ${profitSign}$${u.total_profit.toFixed(2)}
+                            </td>
+                            <td>${u.recharge_count}</td>
+                            <td>
+                                <span class="badge ${u.is_active ? 'active' : 'inactive'}">
+                                    ${u.is_active ? '活跃' : '停用'}
+                                </span>
+                            </td>
+                            <td>
+                                <button class="btn-small" onclick="showRechargeModal(${u.user_id})">充值</button>
+                                <button class="btn-small" onclick="viewUserDetail(${u.user_id})">详情</button>
+                                <button class="btn-small" onclick="toggleUserStatus(${u.user_id})">
+                                    ${u.is_active ? '停用' : '启用'}
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+        }
+        
+        // 🔥 渲染API用户
+        if (apiUsers.length === 0) {
+            apiTbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: #999;">暂无API用户</td></tr>';
+        } else {
+            if (isMobile) {
+                // 移动端卡片布局
+                apiTbody.innerHTML = apiUsers.map(u => `
+                    <tr>
+                        <td colspan="5">
+                            <div class="mobile-card" style="background: #fffbeb;">
+                                <div class="mobile-card-row">
+                                    <span class="mobile-card-label">🔑 API用户</span>
+                                    <span class="mobile-card-value">${u.phone || '未命名'}</span>
+                                </div>
+                                <div class="mobile-card-row">
+                                    <span class="mobile-card-label">创建时间</span>
+                                    <span class="mobile-card-value">${new Date(u.created_at || Date.now()).toLocaleDateString('zh-CN')}</span>
+                                </div>
+                                <div class="mobile-card-row">
+                                    <span class="mobile-card-label">状态</span>
+                                    <span class="mobile-card-value">${u.is_active ? 'API活跃' : 'API停用'}</span>
+                                </div>
+                                <div class="mobile-card-row">
+                                    <button class="btn" onclick="toggleUserStatus(${u.user_id})" style="width: 100%;">
+                                        ${u.is_active ? '停用' : '启用'}
+                                    </button>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                `).join('');
+            } else {
+                // 桌面端表格布局
+                apiTbody.innerHTML = apiUsers.map(u => `
+                    <tr style="background: #fffbeb;">
+                        <td>${u.user_id}</td>
+                        <td>🔑 ${u.phone || '未命名'}</td>
+                        <td>${new Date(u.created_at || Date.now()).toLocaleDateString('zh-CN')}</td>
+                        <td>
+                            <span class="badge ${u.is_active ? 'active' : 'inactive'}">
+                                ${u.is_active ? 'API活跃' : 'API停用'}
+                            </span>
+                        </td>
+                        <td>
+                            <button class="btn-small" onclick="toggleUserStatus(${u.user_id})">
+                                ${u.is_active ? '停用' : '启用'}
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
+            }
+        }
+        
+        // 🔥 更新充值用户下拉框（只显示普通用户）
+        if (select) {
+            select.innerHTML = '<option value="">选择用户</option>' + 
+                normalUsers.map(u => `<option value="${u.user_id}">${u.phone}</option>`).join('');
+        }
+    } catch (error) {
+        console.error('加载用户列表失败：', error);
+        normalTbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 20px; color: #ef4444;">加载失败</td></tr>';
+        apiTbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: #ef4444;">加载失败</td></tr>';
+    }
+}
+
+// 监听窗口大小变化，重新加载
+let resizeTimer;
+window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+        loadUsers();
+    }, 250);
+});
 
 async function saveConfig(e, type) {
     e.preventDefault();

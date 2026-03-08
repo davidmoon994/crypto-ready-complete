@@ -127,10 +127,10 @@ type DashboardSummary struct {
 	RechargeCount   int     `json:"recharge_count"`
 
 	// 新增化率
-	MonthlyRate   float64 `json:"monthly_rate"`   // 月化率
-	QuarterlyRate float64 `json:"quarterly_rate"` // 季度化率
-	AnnualRate    float64 `json:"annual_rate"`    // 年化率
-
+	MonthlyRate    float64 `json:"monthly_rate"`     // 月化率
+	QuarterlyRate  float64 `json:"quarterly_rate"`   // 季度化率
+	AnnualRate     float64 `json:"annual_rate"`      // 年化率
+	LastUpdateTime string  `json:"last_update_time"` // 添加这个
 	// 持有天数
 	AvgHoldDays int `json:"avg_hold_days"`
 }

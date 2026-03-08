@@ -313,6 +313,41 @@ func (h *Handler) AdminManualCheck(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "余额检查完成"})
 }
 
+// AdminUpdateRecharge 修改充值金额
+func (h *Handler) AdminUpdateRecharge(c *gin.Context) {
+	rechargeID, _ := strconv.Atoi(c.Param("id"))
+
+	var req struct {
+		Amount float64 `json:"amount" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		return
+	}
+
+	err := h.service.UpdateRechargeAmount(rechargeID, req.Amount)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "充值记录已更新"})
+}
+
+// AdminDeleteRecharge 删除充值记录（返还份额到系统账户）
+func (h *Handler) AdminDeleteRecharge(c *gin.Context) {
+	rechargeID, _ := strconv.Atoi(c.Param("id"))
+
+	err := h.service.DeleteRecharge(rechargeID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "充值记录已删除"})
+}
+
 // Dashboard路由
 
 // GetDashboardSummary 获取Dashboard总览
@@ -375,23 +410,6 @@ func (h *Handler) DashboardManualRefresh(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "刷新完成"})
-}
-
-// AdminDeleteRecharge 删除充值记录
-func (h *Handler) AdminDeleteRecharge(c *gin.Context) {
-	rechargeID, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "充值ID无效"})
-		return
-	}
-
-	user := c.MustGet("user").(*model.User)
-	if err := h.service.DeleteRecharge(rechargeID, user.ID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "充值记录已删除"})
 }
 
 // AdminGetRechargeStats 获取充值统计

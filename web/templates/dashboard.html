@@ -568,37 +568,35 @@
     let authHeader = '';
     
     // 检查认证
-function checkAuth() {
-        const phone = localStorage.getItem('phone');
-        const password = localStorage.getItem('password');
-        const isActive = localStorage.getItem('isActive');
-        
-        if (!phone || !password) {
-            window.location.href = '/';
-            return false;
-        }
-        // 支持中文的Base64编码
-function utf8_to_b64(str) {
-    return btoa(unescape(encodeURIComponent(str)));
-}
-
-authHeader = 'Basic ' + utf8_to_b64(phone + ':' + password);
-        authHeader = 'Basic ' + btoa(phone + ':' + password);
-        
-        const userPhoneEl = document.getElementById('userPhone');
-        if (userPhoneEl) {
-            userPhoneEl.textContent = phone;
-        }
-        
-        // 显示账户状态
-        const statusEl = document.getElementById('userStatus');
-        if (statusEl && isActive === 'false') {
-            statusEl.innerHTML = '<span style="background: #ef4444; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px;">⚠️ 账户已停用</span>';
-        }
-        
-        return true;
+    function checkAuth() {
+    const phone = localStorage.getItem('phone');
+    const password = localStorage.getItem('password');
+    const isActive = localStorage.getItem('isActive');
+    
+    if (!phone || !password) {
+        window.location.href = '/';
+        return false;
     }
     
+    // 🔥 支持中文的Base64编码
+    function utf8_to_b64(str) {
+        return btoa(unescape(encodeURIComponent(str)));
+    }
+    
+    authHeader = 'Basic ' + utf8_to_b64(phone + ':' + password);
+    
+    const userPhoneEl = document.getElementById('userPhone');
+    if (userPhoneEl) {
+        userPhoneEl.textContent = phone;
+    }
+    
+    const statusEl = document.getElementById('userStatus');
+    if (statusEl && isActive === 'false') {
+        statusEl.innerHTML = '<span style="background: #ef4444; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px;">⚠️ 账户已停用</span>';
+    }
+    
+    return true;
+}
     // ========== 普通用户Dashboard函数 ==========
 async function loadSummary() {
         const response = await fetch(`${API_URL}/dashboard/summary`, { 

@@ -99,86 +99,67 @@ func (s *Service) CreateAPIUser(username, password string) (int64, error) {
 	return userID, nil
 }
 
-// AdminRecharge 管理员为用户充值
-func (s *Service) AdminRecharge(userID int, adminAccountID int, amount float64, currency string) error {
-	if amount <= 0 {
-		return errors.New("充值金额必须大于0")
-	}
-
-	user, err := s.repo.GetUserByID(userID)
-	if err != nil {
-		return err
-	}
-	if user == nil {
-		return errors.New("用户不存在")
-	}
-
-	adminAccount, err := s.repo.GetAdminAccountByID(adminAccountID)
-	if err != nil {
-		return err
-	}
-	if adminAccount == nil {
-		return errors.New("Admin账户不存在")
-	}
-
-	fmt.Printf("\n💰 用户充值:\n")
-	fmt.Printf("  用户: %s (ID: %d)\n", user.Phone, userID)
-	fmt.Printf("  账户: %s (ID: %d)\n", adminAccount.AccountType, adminAccountID)
-	fmt.Printf("  币种: %s\n", currency)
-	fmt.Printf("  金额: $%.2f\n", amount)
-
-	// 🔥 获取该币种的系统可用份额
+// AdminRecharge 管理员给用户充值（从系统账户划转份额）
+func (s *Service) AdminRecharge(userID, adminAccountID int, amount float64, currency string) error {
+	// 1. 获取系统账户的充值记录
 	systemRecharge, err := s.repo.GetSystemRecharge(adminAccountID, currency)
 	if err != nil {
 		return fmt.Errorf("获取系统账户失败: %v", err)
 	}
-
 	if systemRecharge == nil {
-		return fmt.Errorf("系统账户中没有%s可用，请先充值%s到系统账户", currency, currency)
+		return errors.New("系统账户不存在，请先充值到交易所")
 	}
 
-	systemAvailableShares := systemRecharge.Shares
-	fmt.Printf("\n  [步骤1] 系统%s可用份额: %.4f\n", currency, systemAvailableShares)
-
-	// 🔥 按该币种的净值计算需要的份额
-	// 简化处理：稳定币净值=1
-	netValue := 1.0
-	transferShares := amount / netValue
-
-	fmt.Printf("  [步骤2] %s净值: $%.4f\n", currency, netValue)
-	fmt.Printf("  [步骤3] 需划转份额: %.4f (价值 $%.2f)\n", transferShares, amount)
-
-	// 检查系统份额是否足够
-	if transferShares > systemAvailableShares {
-		return fmt.Errorf("系统%s份额不足！需要%.4f份额，但只有%.4f份额可用",
-			currency, transferShares, systemAvailableShares)
+	// 2. 检查系统账户份额是否充足
+	if systemRecharge.Shares < 0.0001 {
+		return errors.New("系统账户份额不足，请先充值到交易所")
 	}
 
-	// 从系统账户扣除份额
-	newSystemShares := systemAvailableShares - transferShares
+	// 3. 计算当前净值
+	account, _ := s.repo.GetAdminAccountByID(adminAccountID)
+	currentBalance, _ := s.walletService.GetBalance(account)
+
+	totalShares, err := s.repo.GetTotalSharesByCurrency(adminAccountID, currency)
+	if err != nil || totalShares == 0 {
+		return errors.New("无法计算净值")
+	}
+
+	netValue := currentBalance / totalShares
+	purchaseShares := amount / netValue
+
+	// 4. 检查系统账户份额是否够划转
+	if systemRecharge.Shares < purchaseShares {
+		return fmt.Errorf("系统账户%s份额不足 (可用: %.4f, 需要: %.4f)",
+			currency, systemRecharge.Shares, purchaseShares)
+	}
+
+	// 5. 🔥 从系统账户扣除份额
+	newSystemShares := systemRecharge.Shares - purchaseShares
 	err = s.repo.UpdateRechargeShares(systemRecharge.ID, newSystemShares)
 	if err != nil {
-		return fmt.Errorf("更新系统份额失败: %v", err)
+		return fmt.Errorf("更新系统账户份额失败: %v", err)
 	}
 
-	// 创建用户充值记录
-	rechargeID, err := s.repo.CreateRechargeWithShares(
+	// 6. 🔥 给用户创建充值记录（使用 CreateRechargeWithShares）
+	_, err = s.repo.CreateRechargeWithShares(
 		userID,
 		adminAccountID,
 		amount,
 		currency,
-		0, // base_balance
-		transferShares,
+		currentBalance,
+		purchaseShares,
 	)
 	if err != nil {
 		// 回滚系统份额
-		s.repo.UpdateRechargeShares(systemRecharge.ID, systemAvailableShares)
-		return fmt.Errorf("创建充值记录失败: %v", err)
+		s.repo.UpdateRechargeShares(systemRecharge.ID, systemRecharge.Shares)
+		return fmt.Errorf("创建用户充值记录失败: %v", err)
 	}
 
-	fmt.Printf("\n  [步骤4] ✓ 充值完成 (记录ID: %d)\n", rechargeID)
-	fmt.Printf("    用户获得%s份额: %.4f\n", currency, transferShares)
-	fmt.Printf("    系统剩余%s份额: %.4f\n", currency, newSystemShares)
+	fmt.Printf("✓ 用户充值成功:\n")
+	fmt.Printf("  用户ID: %d\n", userID)
+	fmt.Printf("  充值金额: $%.2f %s\n", amount, currency)
+	fmt.Printf("  获得份额: %.4f\n", purchaseShares)
+	fmt.Printf("  系统剩余份额: %.4f → %.4f\n", systemRecharge.Shares, newSystemShares)
 
 	return nil
 }
@@ -277,6 +258,76 @@ func (s *Service) AdminDepositToExchange(adminAccountID int, amount float64, cur
 	fmt.Printf("\n  ⚠️  请将 $%.2f %s 充值到 %s\n", amount, currency, adminAccount.AccountType)
 	fmt.Println("  → 充值完成后点击「手动检查余额」")
 
+	return nil
+}
+
+// UpdateRechargeAmount 修改充值金额
+func (s *Service) UpdateRechargeAmount(rechargeID int, newAmount float64) error {
+	// 1. 获取充值记录
+	recharge, err := s.repo.GetRechargeByID(rechargeID)
+	if err != nil {
+		return err
+	}
+
+	// 2. 重新计算份额
+	account, _ := s.repo.GetAdminAccountByID(recharge.AdminAccountID)
+	currentBalance, _ := s.walletService.GetBalance(account)
+	totalShares, _ := s.repo.GetTotalSharesByCurrency(recharge.AdminAccountID, recharge.Currency)
+
+	netValue := currentBalance / totalShares
+	newShares := newAmount / netValue
+
+	// 3. 计算份额差异
+	sharesDiff := newShares - recharge.Shares
+
+	// 4. 从系统账户调整份额
+	systemRecharge, _ := s.repo.GetSystemRecharge(recharge.AdminAccountID, recharge.Currency)
+	if systemRecharge.Shares < sharesDiff {
+		return errors.New("系统账户份额不足")
+	}
+
+	// 5. 更新
+	err = s.repo.UpdateRechargeAmountAndShares(rechargeID, newAmount, newShares)
+	if err != nil {
+		return err
+	}
+
+	err = s.repo.UpdateRechargeShares(systemRecharge.ID, systemRecharge.Shares-sharesDiff)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// DeleteRecharge 删除充值记录（返还份额到系统账户）
+func (s *Service) DeleteRecharge(rechargeID int) error {
+	// 1. 获取充值记录
+	recharge, err := s.repo.GetRechargeByID(rechargeID)
+	if err != nil {
+		return err
+	}
+
+	if recharge.UserID == 0 {
+		return errors.New("不能删除系统账户")
+	}
+
+	// 2. 返还份额到系统账户
+	systemRecharge, _ := s.repo.GetSystemRecharge(recharge.AdminAccountID, recharge.Currency)
+	newSystemShares := systemRecharge.Shares + recharge.Shares
+
+	err = s.repo.UpdateRechargeShares(systemRecharge.ID, newSystemShares)
+	if err != nil {
+		return err
+	}
+
+	// 3. 标记为删除
+	err = s.repo.DeactivateRecharge(rechargeID)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("✓ 充值记录已删除 (ID: %d)，份额已返还到系统账户\n", rechargeID)
 	return nil
 }
 
@@ -416,7 +467,6 @@ func (s *Service) GetUserByID(userID int) (*model.User, error) {
 	return s.repo.GetUserByID(userID)
 }
 
-// GetDashboardSummary Dashboard用户总览
 func (s *Service) GetDashboardSummary(userID int) (*model.DashboardSummary, error) {
 	user, err := s.repo.GetUserByID(userID)
 	if err != nil {
@@ -426,24 +476,48 @@ func (s *Service) GetDashboardSummary(userID int) (*model.DashboardSummary, erro
 		return nil, errors.New("用户不存在")
 	}
 
-	summary := &model.DashboardSummary{}
-
-	// API用户
-	if user.IsAPIUser && user.APIAdminAccountID > 0 {
-		adminAccount, err := s.repo.GetAdminAccountByID(user.APIAdminAccountID)
-		if err != nil || adminAccount == nil {
-			return nil, errors.New("无法获取API账户信息")
+	// 🔥 API用户：使用自己的API密钥查询余额
+	if user.IsAPIUser {
+		// 检查是否已设置API密钥
+		if user.APIKey == "" || user.APISecret == "" {
+			return &model.DashboardSummary{
+				TotalRecharge:   0,
+				CurrentValue:    0,
+				TotalProfit:     0,
+				TotalProfitRate: 0,
+				LastUpdateTime:  time.Now().Format("2006-01-02 15:04:05"),
+			}, nil
 		}
 
-		summary.TotalRecharge = 0
-		summary.CurrentValue = adminAccount.CurrentBalance
-		summary.TotalProfit = 0
-		summary.TotalProfitRate = 0
+		// 使用API用户自己的密钥查询
+		userAccount := &model.AdminAccount{
+			AccountType: user.APIType,
+			APIKey:      user.APIKey,
+			APISecret:   user.APISecret,
+			Passphrase:  user.APIPassphrase,
+		}
 
-		return summary, nil
+		currentBalance, err := s.walletService.GetBalance(userAccount)
+		if err != nil {
+			return nil, fmt.Errorf("获取API账户余额失败: %v", err)
+		}
+
+		totalProfit := currentBalance - user.InitialBalance
+		profitRate := 0.0
+		if user.InitialBalance > 0 {
+			profitRate = (totalProfit / user.InitialBalance) * 100
+		}
+
+		return &model.DashboardSummary{
+			TotalRecharge:   user.InitialBalance,
+			CurrentValue:    currentBalance,
+			TotalProfit:     totalProfit,
+			TotalProfitRate: profitRate,
+			LastUpdateTime:  time.Now().Format("2006-01-02 15:04:05"),
+		}, nil
 	}
 
-	// 🔥 普通用户：修复盈亏计算
+	// 🔥 普通用户：基于份额计算
 	recharges, err := s.repo.GetRechargesByUserID(userID)
 	if err != nil {
 		return nil, err
@@ -462,22 +536,38 @@ func (s *Service) GetDashboardSummary(userID int) (*model.DashboardSummary, erro
 		activeCount++
 		totalRecharge += r.Amount
 
-		// 🔥 关键修复：基于份额计算当前价值
+		// 🔥 关键：基于份额计算当前价值
 		adminAccount, err := s.repo.GetAdminAccountByID(r.AdminAccountID)
 		if err != nil || adminAccount == nil {
-			// 如果获取失败，使用充值金额
+			fmt.Printf("⚠️  充值ID %d: 无法获取账户信息\n", r.ID)
+			totalCurrentValue += r.Amount
+			continue
+		}
+
+		// 🔥 修复：按币种获取总份额
+		totalShares, err := s.repo.GetTotalSharesByCurrency(r.AdminAccountID, r.Currency)
+		if err != nil || totalShares <= 0 {
+			fmt.Printf("⚠️  充值ID %d: 无法获取总份额 (currency: %s)\n", r.ID, r.Currency)
+			totalCurrentValue += r.Amount
+			continue
+		}
+
+		// 🔥 修复：获取当前余额（实时查询）
+		currentBalance, err := s.walletService.GetBalance(adminAccount)
+		if err != nil {
+			fmt.Printf("⚠️  充值ID %d: 无法获取余额\n", r.ID)
 			totalCurrentValue += r.Amount
 			continue
 		}
 
 		// 计算当前价值 = 持有份额 × 净值
-		if adminAccount.TotalShares > 0 && r.Shares > 0 {
-			netValue := adminAccount.CurrentBalance / adminAccount.TotalShares
+		if r.Shares > 0 {
+			netValue := currentBalance / totalShares
 			currentValue := r.Shares * netValue
 			totalCurrentValue += currentValue
 
-			fmt.Printf("  [调试] 充值ID %d: 份额=%.4f, 净值=%.4f, 当前价值=%.2f\n",
-				r.ID, r.Shares, netValue, currentValue)
+			fmt.Printf("  [充值ID %d] 币种=%s, 份额=%.4f, 总份额=%.4f, 余额=$%.2f, 净值=$%.4f, 当前价值=$%.2f\n",
+				r.ID, r.Currency, r.Shares, totalShares, currentBalance, netValue, currentValue)
 		} else {
 			totalCurrentValue += r.Amount
 		}
@@ -502,7 +592,7 @@ func (s *Service) GetDashboardSummary(userID int) (*model.DashboardSummary, erro
 		avgHoldDays = totalHoldDays / activeCount
 	}
 
-	// 计算化率
+	// 计算年化收益率
 	monthlyRate := 0.0
 	quarterlyRate := 0.0
 	annualRate := 0.0
@@ -518,6 +608,7 @@ func (s *Service) GetDashboardSummary(userID int) (*model.DashboardSummary, erro
 	fmt.Printf("  总充值: $%.2f\n", totalRecharge)
 	fmt.Printf("  当前价值: $%.2f\n", totalCurrentValue)
 	fmt.Printf("  总盈亏: $%.2f (%.2f%%)\n", totalProfit, totalProfitRate)
+	fmt.Printf("  年化收益率: %.2f%%\n", annualRate)
 
 	return &model.DashboardSummary{
 		TotalRecharge:   totalRecharge,
@@ -529,6 +620,7 @@ func (s *Service) GetDashboardSummary(userID int) (*model.DashboardSummary, erro
 		QuarterlyRate:   quarterlyRate,
 		AnnualRate:      annualRate,
 		AvgHoldDays:     avgHoldDays,
+		LastUpdateTime:  time.Now().Format("2006-01-02 15:04:05"),
 	}, nil
 }
 
@@ -968,20 +1060,6 @@ func (s *Service) GetUserDetail(userID int) (*model.UserDetailResponse, error) {
 		RechargeCount: len(recharges),
 		Recharges:     rechargeDetails,
 	}, nil
-}
-
-// DeleteRecharge 删除充值记录
-func (s *Service) DeleteRecharge(rechargeID, adminUserID int) error {
-	// 验证是管理员操作
-	recharge, err := s.repo.GetRechargeByID(rechargeID)
-	if err != nil {
-		return err
-	}
-	if recharge == nil {
-		return errors.New("充值记录不存在")
-	}
-
-	return s.repo.DeleteRecharge(rechargeID)
 }
 
 // GetRechargeStatistics 获取充值统计

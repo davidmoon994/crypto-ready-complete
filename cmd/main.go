@@ -153,6 +153,8 @@ func main() {
 				admin.GET("/admin/recharge/stats", h.AdminGetRechargeStats) // 只保留一个
 				admin.POST("/admin/deposit", h.AdminDepositToExchange)      // ← 新增：Admin充值到交易所
 				admin.POST("/admin/recharge", h.AdminRecharge)              // 给用户充值（从系统账户划转）
+				admin.PUT("/admin/recharge/:id", h.AdminUpdateRecharge)
+
 				// 钱包管理
 				admin.POST("/admin/accounts/config", h.AdminConfigAccount)
 				admin.GET("/admin/accounts/status", h.AdminGetAccountsStatus)
