@@ -358,7 +358,11 @@ func (h *Handler) GetDashboardSummary(c *gin.Context) {
 		return
 	}
 
-	userID := userIDStr.(int)
+	userID, ok := userIDStr.(int)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "用户ID类型错误"})
+		return
+	}
 
 	summary, err := h.service.GetDashboardSummary(userID)
 	if err != nil {
@@ -451,8 +455,18 @@ func (h *Handler) AdminCreateAPIUser(c *gin.Context) {
 
 // GetAPIDashboard 获取API用户Dashboard
 func (h *Handler) GetAPIDashboard(c *gin.Context) {
-	userIDStr, _ := c.Get("userID")
-	userID := userIDStr.(int)
+	userIDStr, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
+		return
+	}
+
+	// 🔥 安全的类型转换
+	userID, ok := userIDStr.(int)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "用户ID类型错误"})
+		return
+	}
 
 	data, err := h.service.GetAPIDashboardData(userID)
 	if err != nil {
@@ -466,7 +480,11 @@ func (h *Handler) GetAPIDashboard(c *gin.Context) {
 // SaveAPIKeys API用户保存API密钥
 func (h *Handler) SaveAPIKeys(c *gin.Context) {
 	userIDStr, _ := c.Get("userID")
-	userID := userIDStr.(int)
+	userID, ok := userIDStr.(int)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "用户ID类型错误"})
+		return
+	}
 
 	var req struct {
 		APIType    string `json:"api_type" binding:"required"`
