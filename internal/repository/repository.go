@@ -144,10 +144,40 @@ func (r *Repository) CreateUser(phone, passwordHash string) (int64, error) {
 
 func (r *Repository) GetUserByPhone(phone string) (*model.User, error) {
 	user := &model.User{}
-	err := r.db.QueryRow(
-		"SELECT id, phone, password_hash, is_admin, created_at FROM users WHERE phone = ?",
+	err := r.db.QueryRow(`
+		SELECT id, 
+		       COALESCE(phone, ''), 
+		       COALESCE(username, ''), 
+		       password_hash, 
+		       is_admin, 
+		       COALESCE(is_active, 1),
+		       COALESCE(is_api_user, 0),
+		       COALESCE(api_admin_account_id, 0),
+		       COALESCE(initial_balance, 0),
+		       COALESCE(api_type, ''),
+		       COALESCE(api_key, ''),
+		       COALESCE(api_secret, ''),
+		       COALESCE(api_passphrase, ''),
+		       created_at 
+		FROM users 
+		WHERE phone = ?`,
 		phone,
-	).Scan(&user.ID, &user.Phone, &user.PasswordHash, &user.IsAdmin, &user.CreatedAt)
+	).Scan(
+		&user.ID,
+		&user.Phone,
+		&user.Username,
+		&user.PasswordHash,
+		&user.IsAdmin,
+		&user.IsActive,
+		&user.IsAPIUser,
+		&user.APIAdminAccountID,
+		&user.InitialBalance,
+		&user.APIType,
+		&user.APIKey,
+		&user.APISecret,
+		&user.APIPassphrase,
+		&user.CreatedAt,
+	)
 
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -534,6 +564,9 @@ func (r *Repository) GetUserByUsername(username string) (*model.User, error) {
 		       COALESCE(api_admin_account_id, 0),
 		       COALESCE(initial_balance, 0),
 		       COALESCE(api_type, ''),
+		       COALESCE(api_key, ''),
+		       COALESCE(api_secret, ''),
+		       COALESCE(api_passphrase, ''),
 		       created_at 
 		FROM users 
 		WHERE username = ?`,
@@ -549,6 +582,9 @@ func (r *Repository) GetUserByUsername(username string) (*model.User, error) {
 		&user.APIAdminAccountID,
 		&user.InitialBalance,
 		&user.APIType,
+		&user.APIKey,        // 🔥 添加
+		&user.APISecret,     // 🔥 添加
+		&user.APIPassphrase, // 🔥 添加
 		&user.CreatedAt,
 	)
 
