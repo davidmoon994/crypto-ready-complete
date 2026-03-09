@@ -957,3 +957,14 @@ func (r *Repository) CreateRechargeWithShares(userID, adminAccountID int, amount
 	}
 	return result.LastInsertId()
 }
+
+// UpdateUserInitialBalance 更新用户初始余额
+func (r *Repository) UpdateUserInitialBalance(userID int, initialBalance float64) error {
+	_, err := r.db.Exec(`
+		UPDATE users 
+		SET initial_balance = ? 
+		WHERE id = ? AND is_api_user = 1`,
+		initialBalance, userID,
+	)
+	return err
+}

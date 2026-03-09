@@ -833,86 +833,322 @@ function logout() {
         loadNormalDashboard();
     }
 }
-
-function loadNormalDashboard() {
-    loadSummary();
-    loadRecharges();
-}
-
-function loadNormalDashboard() {
-    loadSummary();
-    loadRecharges();
-}
     
     // 普通用户Dashboard
-function loadNormalDashboard() {
-        loadSummary();
-        loadRecharges();
-        
-        // 定时刷新
-        setInterval(() => {
-            loadSummary();
-            loadRecharges();
-        }, 60000);
+    function loadNormalDashboard() {
+    if (!authHeader) {
+        console.error('authHeader is empty, re-checking auth');
+        if (!checkAuth()) {
+            return;
+        }
     }
+    loadSummary();
+    loadRecharges();
+}
+
+// 自动刷新
+setInterval(() => {
+    if (!checkAuth()) {
+        console.error('Auth failed, stopping auto-refresh');
+        return;
+    }
+    checkUserType();
+}, 60000);
     
     // 渲染API用户Dashboard
-function renderAPIDashboard(data) {
+ function renderAPIDashboard(data) {
     // 如果用户还没有设置API密钥
     if (!data.has_api_keys) {
         showAPIKeySetupForm();
         return;
     }
-        
-        // 隐藏充值记录section
-        const rechargesSection = document.querySelector('.section:has(#rechargesBody)');
-        if (rechargesSection) {
-            rechargesSection.style.display = 'none';
-        }
-        
-        // 修改总览卡片标题和内容
-        const cards = document.querySelectorAll('.summary-card');
-        if (cards.length >= 4) {
-            // 第一个卡片：初始本金
-            const card1Title = cards[0].querySelector('h3');
-            const card1Value = cards[0].querySelector('.value');
-            if (card1Title) card1Title.textContent = '初始本金';
-            if (card1Value) card1Value.textContent = `$${data.initial_balance.toFixed(2)}`;
-            
-            // 第二个卡片：当前总资金
-            const card2Title = cards[1].querySelector('h3');
-            const card2Value = cards[1].querySelector('.value');
-            if (card2Title) card2Title.textContent = '当前总资金';
-            if (card2Value) card2Value.textContent = `$${data.current_balance.toFixed(2)}`;
-            
-            // 第三个卡片：总盈亏
-            const profitColor = data.total_profit >= 0 ? '#10b981' : '#ef4444';
-            const profitSign = data.total_profit >= 0 ? '+' : '';
-            const card3Value = cards[2].querySelector('.value');
-            if (card3Value) {
-                card3Value.textContent = `${profitSign}$${data.total_profit.toFixed(2)}`;
-                card3Value.style.color = profitColor;
-            }
-            
-            // 第四个卡片：盈亏率
-            const card4Value = cards[3].querySelector('.value');
-            if (card4Value) {
-                card4Value.textContent = `${profitSign}${data.profit_rate.toFixed(2)}%`;
-                card4Value.style.color = profitColor;
-            }
-        }
-        
-        // 添加API交易信息区域
-        createAPITradingSection(data);
-        
-        // 添加刷新按钮
-        addAPIRefreshButton();
-        
-        // 定时刷新
-        setInterval(() => {
-            refreshAPIData();
-        }, 60000);
+    
+    // 隐藏充值记录section
+    const rechargesSection = document.querySelector('.section:has(#rechargesBody)');
+    if (rechargesSection) {
+        rechargesSection.style.display = 'none';
     }
+    
+    // 修改总览卡片标题和内容
+    const cards = document.querySelectorAll('.summary-card');
+    if (cards.length >= 4) {
+        // 🔥 获取summary数据
+        const summary = data.summary || {};
+        const initialBalance = summary.total_recharge || data.initial_balance || 0;
+        const currentBalance = summary.current_value || data.current_balance || 0;
+        const totalProfit = summary.total_profit || data.total_profit || 0;
+        const profitRate = summary.total_profit_rate || data.profit_rate || 0;
+        
+        // 第一个卡片：初始本金 + 修改按钮
+        const card1Title = cards[0].querySelector('h3');
+        const card1Value = cards[0].querySelector('.value');
+        if (card1Title) card1Title.textContent = '初始本金';
+        if (card1Value) {
+            card1Value.innerHTML = `
+                $${initialBalance.toFixed(2)}
+                <button class="btn-small" onclick="showEditInitialBalanceModal(${initialBalance})" 
+                        style="margin-left: 10px; font-size: 12px; padding: 4px 8px;">
+                    修改
+                </button>
+            `;
+        }
+        
+        // 第二个卡片：当前总资金
+        const card2Title = cards[1].querySelector('h3');
+        const card2Value = cards[1].querySelector('.value');
+        if (card2Title) card2Title.textContent = '当前总资金';
+        if (card2Value) card2Value.textContent = `$${currentBalance.toFixed(2)}`;
+        
+        // 第三个卡片：总盈亏
+        const profitColor = totalProfit >= 0 ? '#10b981' : '#ef4444';
+        const profitSign = totalProfit >= 0 ? '+' : '';
+        const card3Value = cards[2].querySelector('.value');
+        if (card3Value) {
+            card3Value.textContent = `${profitSign}$${totalProfit.toFixed(2)}`;
+            card3Value.style.color = profitColor;
+        }
+        
+        // 第四个卡片：盈亏率
+        const card4Value = cards[3].querySelector('.value');
+        if (card4Value) {
+            card4Value.textContent = `${profitSign}${profitRate.toFixed(2)}%`;
+            card4Value.style.color = profitColor;
+        }
+    }
+    
+    // 添加API交易信息区域
+    createAPITradingSection(data);
+    
+    // 添加刷新按钮
+    addAPIRefreshButton();
+    
+    // 🔥 修复：确保定时刷新时authHeader存在
+    setInterval(() => {
+        if (authHeader && checkAuth()) {
+            refreshAPIData();
+        }
+    }, 60000);
+}
+
+// 🔥 新增：显示修改初始余额的弹窗
+function showEditInitialBalanceModal(currentBalance) {
+    // 检查是否已存在modal，避免重复
+    const existingModal = document.getElementById('editInitialBalanceModal');
+    if (existingModal) {
+        existingModal.remove();
+    }
+    
+    const modal = document.createElement('div');
+    modal.id = 'editInitialBalanceModal';
+    modal.className = 'modal';
+    modal.style.display = 'flex';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 400px;">
+            <h3>💰 修改初始余额</h3>
+            <form id="editInitialBalanceForm">
+                <div class="form-group">
+                    <label>当前初始余额</label>
+                    <input type="text" value="$${currentBalance.toFixed(2)}" disabled 
+                           style="background: #f5f5f5; color: #666;">
+                </div>
+                <div class="form-group">
+                    <label>新的初始余额 (USDT/USDC)</label>
+                    <input type="number" id="newInitialBalance" step="0.01" 
+                           value="${currentBalance}" required 
+                           placeholder="请输入您的实际充值金额">
+                    <small style="color: #999; display: block; margin-top: 5px;">
+                        💡 提示：请输入您实际充值到交易所的总金额，用于计算盈亏
+                    </small>
+                </div>
+                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                    <button type="submit" class="btn" style="flex: 1;">✅ 确认修改</button>
+                    <button type="button" class="btn" onclick="closeEditInitialBalanceModal()" 
+                            style="flex: 1; background: #999;">❌ 取消</button>
+                </div>
+            </form>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    
+    // 绑定提交事件
+    document.getElementById('editInitialBalanceForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const newBalance = parseFloat(document.getElementById('newInitialBalance').value);
+        
+        if (newBalance < 0) {
+            alert('初始余额不能为负数');
+            return;
+        }
+        
+        try {
+            const response = await fetch(`${API_URL}/dashboard/api/initial-balance`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': authHeader,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ initial_balance: newBalance })
+            });
+            
+            if (response.ok) {
+                alert('✅ 初始余额已更新！');
+                closeEditInitialBalanceModal();
+                checkUserType(); // 刷新页面数据
+            } else {
+                const data = await response.json();
+                alert('❌ 更新失败: ' + (data.error || '未知错误'));
+            }
+        } catch (error) {
+            console.error('更新初始余额失败:', error);
+            alert('❌ 网络错误，请稍后重试');
+        }
+    });
+    
+    // 点击modal外部关闭
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            closeEditInitialBalanceModal();
+        }
+    });
+}
+
+// 🔥 新增：关闭修改初始余额弹窗
+function closeEditInitialBalanceModal() {
+    const modal = document.getElementById('editInitialBalanceModal');
+    if (modal) {
+        modal.remove();
+    }
+}
+
+// 🔥 修改showAPIKeySetupForm函数，添加初始余额输入
+function showAPIKeySetupForm() {
+    const mainContent = document.querySelector('.summary-cards').parentElement;
+    if (!mainContent) return;
+    
+    mainContent.innerHTML = `
+        <div class="card" style="max-width: 600px; margin: 40px auto;">
+            <h2 style="text-align: center; margin-bottom: 30px;">🔑 设置API密钥</h2>
+            <p style="color: #666; text-align: center; margin-bottom: 30px;">
+                绑定您的交易所API，实时查看账户资产和交易数据
+            </p>
+            <form id="apiKeysForm">
+                <div class="form-group">
+                    <label>📊 API类型</label>
+                    <select id="apiType" required onchange="togglePassphraseField()">
+                        <option value="">请选择交易所</option>
+                        <option value="Binance">Binance (币安)</option>
+                        <option value="OKX">OKX (欧易)</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>🔐 API Key</label>
+                    <input type="text" id="apiKey" required placeholder="请输入您的API Key">
+                </div>
+                
+                <div class="form-group">
+                    <label>🔑 API Secret</label>
+                    <input type="password" id="apiSecret" required placeholder="请输入您的API Secret">
+                    <small style="color: #999;">您的API密钥将被加密存储</small>
+                </div>
+                
+                <div class="form-group" id="passphraseGroup" style="display:none;">
+                    <label>🔒 Passphrase (仅OKX需要)</label>
+                    <input type="password" id="apiPassphrase" placeholder="请输入Passphrase">
+                </div>
+                
+                <div class="form-group">
+                    <label>💰 初始余额 (USDT/USDC)</label>
+                    <input type="number" id="initialBalance" step="0.01" required 
+                           placeholder="请输入您的初始充值金额">
+                    <small style="color: #999; display: block; margin-top: 5px;">
+                        💡 请输入您实际充值到交易所的总金额，用于计算盈亏。例如：如果您充值了1000 USDT，请输入 1000
+                    </small>
+                </div>
+                
+                <button type="submit" class="btn" style="width: 100%; margin-top: 20px;">
+                    💾 保存API密钥并开始使用
+                </button>
+            </form>
+            
+            <div style="margin-top: 30px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                <h4 style="margin-bottom: 10px;">📌 温馨提示</h4>
+                <ul style="color: #666; font-size: 14px; line-height: 1.8; padding-left: 20px;">
+                    <li>API密钥仅用于查询数据，不会进行任何交易操作</li>
+                    <li>请确保API权限仅开启"读取"权限，关闭"交易"和"提现"权限</li>
+                    <li>初始余额用于计算盈亏，可随时修改</li>
+                </ul>
+            </div>
+        </div>
+    `;
+    
+    // 绑定表单提交
+    document.getElementById('apiKeysForm').addEventListener('submit', saveAPIKeys);
+}
+
+// 🔥 切换Passphrase字段显示
+function togglePassphraseField() {
+    const apiType = document.getElementById('apiType').value;
+    const passphraseGroup = document.getElementById('passphraseGroup');
+    const passphraseInput = document.getElementById('apiPassphrase');
+    
+    if (apiType === 'OKX') {
+        passphraseGroup.style.display = 'block';
+        passphraseInput.required = true;
+    } else {
+        passphraseGroup.style.display = 'none';
+        passphraseInput.required = false;
+    }
+}
+
+// 🔥 修改saveAPIKeys函数，包含初始余额
+async function saveAPIKeys(e) {
+    e.preventDefault();
+    
+    const apiType = document.getElementById('apiType').value;
+    const apiKey = document.getElementById('apiKey').value;
+    const apiSecret = document.getElementById('apiSecret').value;
+    const apiPassphrase = document.getElementById('apiPassphrase')?.value || '';
+    const initialBalance = parseFloat(document.getElementById('initialBalance').value);
+    
+    if (!apiType || !apiKey || !apiSecret) {
+        alert('请填写完整的API信息');
+        return;
+    }
+    
+    if (isNaN(initialBalance) || initialBalance < 0) {
+        alert('请输入有效的初始余额');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_URL}/dashboard/api/keys`, {
+            method: 'POST',
+            headers: {
+                'Authorization': authHeader,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                api_type: apiType,
+                api_key: apiKey,
+                api_secret: apiSecret,
+                api_passphrase: apiPassphrase,
+                initial_balance: initialBalance
+            })
+        });
+        
+        if (response.ok) {
+            alert('✅ API密钥保存成功！');
+            checkUserType(); // 刷新页面
+        } else {
+            const data = await response.json();
+            alert('❌ 保存失败: ' + (data.error || '未知错误'));
+        }
+    } catch (error) {
+        console.error('保存API密钥失败:', error);
+        alert('❌ 网络错误，请稍后重试');
+    }
+}
     
     // 创建API交易信息区域
 function createAPITradingSection(data) {
@@ -1147,88 +1383,6 @@ function addAPIRefreshButton() {
         container.insertAdjacentHTML('beforeend', refreshButtonHTML);
     }
     
-function showAPIKeySetupForm() {
-    const container = document.querySelector('.container');
-    container.innerHTML = `
-        <div class="section">
-            <h2>🔑 设置API密钥</h2>
-            <p style="color: #666; margin-bottom: 20px;">
-                首次使用需要配置您的交易所API密钥，系统将使用此密钥获取您的账户数据。
-            </p>
-            
-            <form id="apiKeyForm">
-                <div class="form-group">
-                    <label>选择交易所</label>
-                    <select id="apiType" onchange="togglePassphraseField()">
-                        <option value="Binance">Binance</option>
-                        <option value="OKX">OKX</option>
-                    </select>
-                </div>
-                
-                <div class="form-group">
-                    <label>API Key</label>
-                    <input type="text" id="apiKey" required>
-                </div>
-                
-                <div class="form-group">
-                    <label>API Secret</label>
-                    <input type="password" id="apiSecret" required>
-                </div>
-                
-                <div class="form-group" id="passphraseGroup" style="display:none;">
-                    <label>Passphrase (OKX必需)</label>
-                    <input type="password" id="apiPassphrase">
-                </div>
-                
-                <button type="submit" class="btn">保存并验证</button>
-            </form>
-        </div>
-    `;
-    
-    document.getElementById('apiKeyForm').addEventListener('submit', saveAPIKeys);
-}
-
-function togglePassphraseField() {
-    const apiType = document.getElementById('apiType').value;
-    document.getElementById('passphraseGroup').style.display = 
-        apiType === 'OKX' ? 'block' : 'none';
-}
-
-async function saveAPIKeys(e) {
-    e.preventDefault();
-    
-    const apiType = document.getElementById('apiType').value;
-    const apiKey = document.getElementById('apiKey').value;
-    const apiSecret = document.getElementById('apiSecret').value;
-    const passphrase = document.getElementById('apiPassphrase').value;
-    
-    try {
-        const response = await fetch(`${API_URL}/dashboard/api/keys`, {
-            method: 'POST',
-            headers: {
-                'Authorization': authHeader,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                api_type: apiType,
-                api_key: apiKey,
-                api_secret: apiSecret,
-                passphrase: passphrase
-            })
-        });
-        
-        if (response.ok) {
-            alert('✓ API密钥保存成功！正在加载数据...');
-            location.reload();
-        } else {
-            const data = await response.json();
-            alert('❌ ' + data.error);
-        }
-    } catch (error) {
-        alert('❌ 网络错误: ' + error.message);
-    }
-}
-
     // 刷新API用户数据
  async function refreshAPIData() {
         try {

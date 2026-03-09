@@ -1203,3 +1203,8 @@ func (s *Service) GetAPIDashboardData(userID int) (*model.APIDashboardData, erro
 		LastUpdateTime: time.Now().Format("2006-01-02 15:04:05"),
 	}, nil
 }
+
+// UpdateAPIUserInitialBalance 更新API用户的初始余额
+func (s *Service) UpdateAPIUserInitialBalance(userID int, initialBalance float64) error {
+	return s.repo.UpdateUserInitialBalance(userID, initialBalance)
+}

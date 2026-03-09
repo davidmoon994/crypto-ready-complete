@@ -527,3 +527,35 @@ func (h *Handler) AdminDepositToExchange(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "充值到系统账户成功"})
 }
+
+// UpdateAPIInitialBalance API用户更新初始余额
+func (h *Handler) UpdateAPIInitialBalance(c *gin.Context) {
+	userIDInterface, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
+		return
+	}
+
+	userID, ok := userIDInterface.(int)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "用户ID类型错误"})
+		return
+	}
+
+	var req struct {
+		InitialBalance float64 `json:"initial_balance" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		return
+	}
+
+	err := h.service.UpdateAPIUserInitialBalance(userID, req.InitialBalance)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "初始余额已更新"})
+}
