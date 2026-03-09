@@ -27,15 +27,14 @@ func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-
 		user, err := h.service.Login(phone, password)
 		if err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "认证失败: " + err.Error()})
 			c.Abort()
 			return
 		}
-
 		c.Set("user", user)
+		c.Set("userID", user.ID) // 🔥 添加这一行
 		c.Next()
 	}
 }
