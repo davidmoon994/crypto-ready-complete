@@ -42,16 +42,19 @@ func hashPassword(password string) string {
 }
 
 // Login 登录
-func (s *Service) Login(phone, password string) (*model.User, error) {
-	user, err := s.repo.GetUserByPhone(phone)
-	if err != nil {
-		return nil, err
-	}
-	if user == nil {
-		return nil, errors.New("用户不存在")
+func (s *Service) Login(credential, password string) (*model.User, error) {
+	// 先尝试用phone查询
+	user, err := s.repo.GetUserByPhone(credential)
+	if err != nil || user == nil {
+		// 再尝试用username查询
+		user, err = s.repo.GetUserByUsername(credential)
+		if err != nil || user == nil {
+			return nil, errors.New("用户不存在")
+		}
 	}
 
-	passwordHash := s.HashPassword(password)
+	// 验证密码
+	passwordHash := hashPassword(password)
 	if user.PasswordHash != passwordHash {
 		return nil, errors.New("密码错误")
 	}

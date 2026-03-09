@@ -524,11 +524,16 @@ func (r *Repository) CreateAPIUser(username, passwordHash string, adminAccountID
 func (r *Repository) GetUserByUsername(username string) (*model.User, error) {
 	user := &model.User{}
 	err := r.db.QueryRow(`
-		SELECT id, COALESCE(phone, ''), COALESCE(username, ''), password_hash, is_admin, 
+		SELECT id, 
+		       COALESCE(phone, ''), 
+		       COALESCE(username, ''), 
+		       password_hash, 
+		       is_admin, 
 		       COALESCE(is_active, 1),
 		       COALESCE(is_api_user, 0),
 		       COALESCE(api_admin_account_id, 0),
 		       COALESCE(initial_balance, 0),
+		       COALESCE(api_type, ''),
 		       created_at 
 		FROM users 
 		WHERE username = ?`,
@@ -543,6 +548,7 @@ func (r *Repository) GetUserByUsername(username string) (*model.User, error) {
 		&user.IsAPIUser,
 		&user.APIAdminAccountID,
 		&user.InitialBalance,
+		&user.APIType,
 		&user.CreatedAt,
 	)
 
