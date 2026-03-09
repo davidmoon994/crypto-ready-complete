@@ -417,7 +417,7 @@ func (r *Repository) GetRechargeStatistics() (map[int]map[string]float64, error)
 	rows, err := r.db.Query(`
 		SELECT admin_account_id, currency, SUM(amount) as total
 		FROM recharges
-		WHERE is_active = 1
+		WHERE is_active = 1 AND user_id > 0  -- 🔥 只统计普通用户
 		GROUP BY admin_account_id, currency
 	`)
 	if err != nil {
@@ -619,19 +619,19 @@ func (r *Repository) GetUserSharesByCurrency(userID, adminAccountID int, currenc
 	return shares, err
 }
 
-// GetTotalSharesByCurrency 获取某账户某币种的总份额（包括系统和所有用户）
+// GetTotalSharesByCurrency 获取某个账户某个币种的总份额
 func (r *Repository) GetTotalSharesByCurrency(adminAccountID int, currency string) (float64, error) {
-	var shares float64
+	var totalShares float64
 	err := r.db.QueryRow(`
 		SELECT COALESCE(SUM(shares), 0)
 		FROM recharges
-		WHERE admin_account_id = ?
-		  AND currency = ?
+		WHERE admin_account_id = ? 
+		  AND currency = ? 
 		  AND is_active = 1`,
 		adminAccountID, currency,
-	).Scan(&shares)
+	).Scan(&totalShares)
 
-	return shares, err
+	return totalShares, err
 }
 
 // GetAllSharesByAccount 获取某账户所有币种的总份额
@@ -727,19 +727,31 @@ func (r *Repository) GetAllActiveRecharges() ([]*model.Recharge, error) {
 	return recharges, nil
 }
 
-func (r *Repository) GetRechargeByID(id int) (*model.Recharge, error) {
-	rch := &model.Recharge{}
-	err := r.db.QueryRow(
-		`SELECT id, user_id, admin_account_id, amount, currency, recharge_at, base_balance, is_active, created_at
-		 FROM recharges WHERE id=?`,
-		id,
-	).Scan(&rch.ID, &rch.UserID, &rch.AdminAccountID, &rch.Amount, &rch.Currency,
-		&rch.RechargeAt, &rch.BaseBalance, &rch.IsActive, &rch.CreatedAt)
+// GetRechargeByID 获取充值记录
+func (r *Repository) GetRechargeByID(rechargeID int) (*model.Recharge, error) {
+	recharge := &model.Recharge{}
+	err := r.db.QueryRow(`
+		SELECT id, user_id, admin_account_id, amount, currency, 
+		       base_balance, shares, recharge_at, is_active
+		FROM recharges
+		WHERE id = ?`,
+		rechargeID,
+	).Scan(
+		&recharge.ID,
+		&recharge.UserID,
+		&recharge.AdminAccountID,
+		&recharge.Amount,
+		&recharge.Currency,
+		&recharge.BaseBalance,
+		&recharge.Shares,
+		&recharge.RechargeAt,
+		&recharge.IsActive,
+	)
 
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
-	return rch, err
+	return recharge, err
 }
 
 // UpdateUserStatus 更新用户状态

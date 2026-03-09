@@ -804,26 +804,45 @@ function logout() {
     // ========== API用户Dashboard函数 ==========
     
     // 检查用户类型
-async function checkUserType() {
-        try {
-            const response = await fetch(`${API_URL}/dashboard/api`, {
-                headers: { 'Authorization': authHeader }
-            });
+    async function checkUserType() {
+    try {
+        // 🔥 先尝试获取API Dashboard数据
+        const apiResponse = await fetch(`${API_URL}/dashboard/api`, {
+            headers: { 'Authorization': authHeader }
+        });
+        
+        if (apiResponse.ok) {
+            const apiData = await apiResponse.json();
             
-            if (response.ok) {
-                // 是API用户，显示API Dashboard
-                const data = await response.json();
-                renderAPIDashboard(data);
-            } else {
-                // 是普通用户，显示普通Dashboard
-                loadNormalDashboard();
+            // 🔥 如果有 has_api_keys 字段，说明是API用户
+            if (apiData !== null && typeof apiData === 'object') {
+                // 检查是否是API用户的返回数据
+                if (apiData.hasOwnProperty('has_api_keys') || 
+                    apiData.hasOwnProperty('positions') || 
+                    apiData.hasOwnProperty('orders')) {
+                    renderAPIDashboard(apiData);
+                    return;
+                }
             }
-        } catch (error) {
-            // 出错则默认显示普通Dashboard
-            console.error('检查用户类型失败:', error);
-            loadNormalDashboard();
         }
+        
+        // 如果不是API用户，或者API调用失败，加载普通Dashboard
+        loadNormalDashboard();
+    } catch (error) {
+        console.error('检查用户类型失败:', error);
+        loadNormalDashboard();
     }
+}
+
+function loadNormalDashboard() {
+    loadSummary();
+    loadRecharges();
+}
+
+function loadNormalDashboard() {
+    loadSummary();
+    loadRecharges();
+}
     
     // 普通用户Dashboard
 function loadNormalDashboard() {
