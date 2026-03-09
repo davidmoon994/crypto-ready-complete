@@ -1132,7 +1132,7 @@ func (s *Service) GetAPIDashboardData(userID int) (*model.APIDashboardData, erro
 	// 🔥 检查是否已设置API密钥
 	if user.APIKey == "" || user.APISecret == "" {
 		return &model.APIDashboardData{
-			HasAPIKeys: false, // 标记未设置API密钥
+			HasAPIKeys: false,
 		}, nil
 	}
 
@@ -1156,13 +1156,43 @@ func (s *Service) GetAPIDashboardData(userID int) (*model.APIDashboardData, erro
 		profitRate = (totalProfit / user.InitialBalance) * 100
 	}
 
+	// 🔥 计算持有天数
+	holdDays := int(time.Since(user.CreatedAt).Hours() / 24)
+	if holdDays < 1 {
+		holdDays = 1
+	}
+
+	// 🔥 计算年化收益率
+	monthlyRate := 0.0
+	quarterlyRate := 0.0
+	annualRate := 0.0
+
+	if holdDays > 0 && profitRate != 0 {
+		dailyRate := profitRate / float64(holdDays)
+		monthlyRate = dailyRate * 30
+		quarterlyRate = dailyRate * 90
+		annualRate = dailyRate * 365
+	}
+
 	// 获取持仓、委托、历史
 	positions, _ := s.walletService.GetPositions(userAccount, 20)
 	orders, _ := s.walletService.GetOrders(userAccount, 20)
 	historyTrades, _ := s.walletService.GetHistoryTrades(userAccount, 50)
 
 	return &model.APIDashboardData{
-		HasAPIKeys:     true,
+		HasAPIKeys: true,
+		// 🔥 添加Summary字段
+		Summary: &model.DashboardSummary{
+			TotalRecharge:   user.InitialBalance,
+			CurrentValue:    currentBalance,
+			TotalProfit:     totalProfit,
+			TotalProfitRate: profitRate,
+			MonthlyRate:     monthlyRate,
+			QuarterlyRate:   quarterlyRate,
+			AnnualRate:      annualRate,
+			AvgHoldDays:     holdDays,
+			LastUpdateTime:  time.Now().Format("2006-01-02 15:04:05"),
+		},
 		CurrentBalance: currentBalance,
 		InitialBalance: user.InitialBalance,
 		TotalProfit:    totalProfit,

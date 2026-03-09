@@ -207,15 +207,16 @@ type UserSummary struct {
 
 // API用户Dashboard数据
 type APIDashboardData struct {
-	HasAPIKeys     bool           `json:"has_api_keys"` // 新增
-	CurrentBalance float64        `json:"current_balance"`
-	InitialBalance float64        `json:"initial_balance"`
-	TotalProfit    float64        `json:"total_profit"`
-	ProfitRate     float64        `json:"profit_rate"`
-	Positions      []Position     `json:"positions"`
-	Orders         []Order        `json:"orders"`
-	HistoryTrades  []HistoryTrade `json:"history_trades"`
-	LastUpdateTime string         `json:"last_update_time"`
+	HasAPIKeys     bool              `json:"has_api_keys"`
+	Summary        *DashboardSummary `json:"summary"` // 🔥 添加这个
+	CurrentBalance float64           `json:"current_balance"`
+	InitialBalance float64           `json:"initial_balance"`
+	TotalProfit    float64           `json:"total_profit"`
+	ProfitRate     float64           `json:"profit_rate"`
+	Positions      []Position        `json:"positions"`
+	Orders         []Order           `json:"orders"`
+	HistoryTrades  []HistoryTrade    `json:"history_trades"`
+	LastUpdateTime string            `json:"last_update_time"`
 }
 
 // 持仓信息
