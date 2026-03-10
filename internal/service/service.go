@@ -104,65 +104,35 @@ func (s *Service) CreateAPIUser(username, password string) (int64, error) {
 
 // AdminRecharge 管理员给用户充值（从系统账户划转份额）
 func (s *Service) AdminRecharge(userID, adminAccountID int, amount float64, currency string) error {
-	// 1. 获取系统账户的充值记录
+	// 获取系统账户
 	systemRecharge, err := s.repo.GetSystemRecharge(adminAccountID, currency)
 	if err != nil {
 		return fmt.Errorf("获取系统账户失败: %v", err)
 	}
 	if systemRecharge == nil {
-		return errors.New("系统账户不存在，请先充值到交易所")
+		return errors.New("系统账户不存在")
 	}
 
-	// 2. 检查系统账户份额是否充足
-	if systemRecharge.Shares < 0.0001 {
-		return errors.New("系统账户份额不足，请先充值到交易所")
-	}
+	// 🔥 简单模式：1:1分配份额
+	purchaseShares := amount
 
-	// 3. 计算当前净值
-	account, _ := s.repo.GetAdminAccountByID(adminAccountID)
-	currentBalance, _ := s.walletService.GetBalance(account)
-
-	totalShares, err := s.repo.GetTotalSharesByCurrency(adminAccountID, currency)
-	if err != nil || totalShares == 0 {
-		return errors.New("无法计算净值")
-	}
-
-	netValue := currentBalance / totalShares
-	purchaseShares := amount / netValue
-
-	// 4. 检查系统账户份额是否够划转
-	if systemRecharge.Shares < purchaseShares {
-		return fmt.Errorf("系统账户%s份额不足 (可用: %.4f, 需要: %.4f)",
-			currency, systemRecharge.Shares, purchaseShares)
-	}
-
-	// 5. 🔥 从系统账户扣除份额
-	newSystemShares := systemRecharge.Shares - purchaseShares
-	err = s.repo.UpdateRechargeShares(systemRecharge.ID, newSystemShares)
-	if err != nil {
-		return fmt.Errorf("更新系统账户份额失败: %v", err)
-	}
-
-	// 6. 🔥 给用户创建充值记录（使用 CreateRechargeWithShares）
+	// 创建用户充值记录
 	_, err = s.repo.CreateRechargeWithShares(
 		userID,
 		adminAccountID,
 		amount,
 		currency,
-		currentBalance,
+		0, // base_balance 不需要了
 		purchaseShares,
 	)
 	if err != nil {
-		// 回滚系统份额
-		s.repo.UpdateRechargeShares(systemRecharge.ID, systemRecharge.Shares)
-		return fmt.Errorf("创建用户充值记录失败: %v", err)
+		return fmt.Errorf("创建充值记录失败: %v", err)
 	}
 
 	fmt.Printf("✓ 用户充值成功:\n")
 	fmt.Printf("  用户ID: %d\n", userID)
 	fmt.Printf("  充值金额: $%.2f %s\n", amount, currency)
-	fmt.Printf("  获得份额: %.4f\n", purchaseShares)
-	fmt.Printf("  系统剩余份额: %.4f → %.4f\n", systemRecharge.Shares, newSystemShares)
+	fmt.Printf("  获得份额: %.2f\n", purchaseShares)
 
 	return nil
 }
@@ -549,15 +519,15 @@ func (s *Service) GetDashboardSummary(userID int) (*model.DashboardSummary, erro
 			continue
 		}
 
-		// 🔥 修复：按币种获取总份额
-		totalShares, err := s.repo.GetTotalSharesByCurrency(r.AdminAccountID, r.Currency)
-		if err != nil || totalShares <= 0 {
-			fmt.Printf("⚠️  充值ID %d: 无法获取总份额 (currency: %s)\n", r.ID, r.Currency)
+		// 🔥 1:1份额模式：获取总充值金额
+		totalRechargeAmount, err := s.repo.GetTotalRechargeAmountByCurrency(r.AdminAccountID, r.Currency)
+		if err != nil || totalRechargeAmount <= 0 {
+			fmt.Printf("⚠️  充值ID %d: 无法获取总充值金额 (currency: %s)\n", r.ID, r.Currency)
 			totalCurrentValue += r.Amount
 			continue
 		}
 
-		// 🔥 修复：按币种获取余额
+		// 🔥 按币种获取余额
 		currentBalance, err := s.walletService.GetBalanceByAsset(adminAccount, r.Currency)
 		if err != nil {
 			fmt.Printf("⚠️  充值ID %d: 无法获取余额\n", r.ID)
@@ -565,17 +535,13 @@ func (s *Service) GetDashboardSummary(userID int) (*model.DashboardSummary, erro
 			continue
 		}
 
-		// 计算当前价值 = 持有份额 × 净值
-		if r.Shares > 0 {
-			netValue := currentBalance / totalShares
-			currentValue := r.Shares * netValue
-			totalCurrentValue += currentValue
+		// 🔥 1:1份额模式：净值 = 当前余额 / 总充值金额
+		netValue := currentBalance / totalRechargeAmount
+		currentValue := r.Amount * netValue // 用户当前价值 = 用户充值 × 净值
+		totalCurrentValue += currentValue
 
-			fmt.Printf("  [充值ID %d] 币种=%s, 份额=%.4f, 总份额=%.4f, 余额=$%.2f, 净值=$%.4f, 当前价值=$%.2f\n",
-				r.ID, r.Currency, r.Shares, totalShares, currentBalance, netValue, currentValue)
-		} else {
-			totalCurrentValue += r.Amount
-		}
+		fmt.Printf("  [充值ID %d] 币种=%s, 用户充值=$%.2f, 总充值=$%.2f, 余额=$%.2f, 净值=$%.4f, 当前价值=$%.2f\n",
+			r.ID, r.Currency, r.Amount, totalRechargeAmount, currentBalance, netValue, currentValue)
 
 		// 计算持有天数
 		holdDays := int(time.Since(r.RechargeAt).Hours() / 24)

@@ -968,3 +968,18 @@ func (r *Repository) UpdateUserInitialBalance(userID int, initialBalance float64
 	)
 	return err
 }
+
+// GetTotalRechargeAmountByCurrency 获取某个账户某个币种的总充值金额
+func (r *Repository) GetTotalRechargeAmountByCurrency(adminAccountID int, currency string) (float64, error) {
+	var totalAmount float64
+	err := r.db.QueryRow(`
+		SELECT COALESCE(SUM(amount), 0)
+		FROM recharges
+		WHERE admin_account_id = ? 
+		  AND currency = ? 
+		  AND is_active = 1`,
+		adminAccountID, currency,
+	).Scan(&totalAmount)
+
+	return totalAmount, err
+}
