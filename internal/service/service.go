@@ -557,8 +557,8 @@ func (s *Service) GetDashboardSummary(userID int) (*model.DashboardSummary, erro
 			continue
 		}
 
-		// 🔥 修复：获取当前余额（实时查询）
-		currentBalance, err := s.walletService.GetBalance(adminAccount)
+		// 🔥 修复：按币种获取余额
+		currentBalance, err := s.walletService.GetBalanceByAsset(adminAccount, r.Currency)
 		if err != nil {
 			fmt.Printf("⚠️  充值ID %d: 无法获取余额\n", r.ID)
 			totalCurrentValue += r.Amount

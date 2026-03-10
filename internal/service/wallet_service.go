@@ -1099,3 +1099,221 @@ func (ws *WalletService) getOKXHistoryTrades(account *model.AdminAccount, limit 
 
 	return trades, nil
 }
+
+// GetBalanceByAsset 按币种获取余额（只统计USDT或USDC）
+func (ws *WalletService) GetBalanceByAsset(account *model.AdminAccount, currency string) (float64, error) {
+	switch account.AccountType {
+	case "Binance":
+		return ws.getBinanceBalanceByAsset(account, currency)
+	case "OKX":
+		return ws.getOKXBalanceByAsset(account, currency)
+	case "Wallet":
+		return ws.getWalletBalanceByAsset(account, currency)
+	default:
+		return 0, fmt.Errorf("不支持的账户类型: %s", account.AccountType)
+	}
+}
+
+// getBinanceBalanceByAsset 获取Binance指定币种余额
+func (ws *WalletService) getBinanceBalanceByAsset(account *model.AdminAccount, currency string) (float64, error) {
+	if account.APIKey == "" || account.APISecret == "" {
+		return 0, fmt.Errorf("未配置Binance API Key")
+	}
+
+	totalBalance := 0.0
+
+	// 1. 获取现货账户余额（暂时跳过，因为只统计USDⓈ-M合约）
+	// spotBalance, _ := ws.getBinanceSpotBalanceByAsset(account, currency)
+	// totalBalance += spotBalance
+
+	// 2. 获取USDⓈ-M永续合约余额（U本位合约）
+	futuresBalance, err := ws.getBinanceFuturesBalanceByAsset(account, currency)
+	if err != nil {
+		fmt.Printf("  ⚠️  获取Binance USDⓈ-M %s余额失败: %v\n", currency, err)
+	} else {
+		totalBalance += futuresBalance
+	}
+
+	fmt.Printf("  ✓ Binance %s 余额: $%.2f\n", currency, totalBalance)
+	return totalBalance, nil
+}
+
+// getBinanceFuturesBalanceByAsset 获取U本位合约指定币种余额
+func (ws *WalletService) getBinanceFuturesBalanceByAsset(account *model.AdminAccount, currency string) (float64, error) {
+	timestamp := fmt.Sprintf("%d", time.Now().UnixNano()/1000000)
+	queryString := fmt.Sprintf("timestamp=%s", timestamp)
+	signature := ws.binanceSign(queryString, account.APISecret)
+
+	url := "https://fapi.binance.com/fapi/v2/balance?" + queryString + "&signature=" + signature
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("X-MBX-APIKEY", account.APIKey)
+
+	resp, err := ws.httpClient.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, err
+	}
+
+	var balances []struct {
+		Asset              string `json:"asset"`
+		Balance            string `json:"balance"`
+		CrossWalletBalance string `json:"crossWalletBalance"`
+		AvailableBalance   string `json:"availableBalance"`
+	}
+
+	if err := json.Unmarshal(body, &balances); err != nil {
+		return 0, err
+	}
+
+	// 🔥 只统计指定币种（USDT或USDC）
+	for _, b := range balances {
+		if b.Asset == currency {
+			balance, _ := strconv.ParseFloat(b.Balance, 64)
+			return balance, nil
+		}
+	}
+
+	return 0, nil
+}
+
+// getOKXBalanceByAsset 获取OKX指定币种余额
+func (ws *WalletService) getOKXBalanceByAsset(account *model.AdminAccount, currency string) (float64, error) {
+	if account.APIKey == "" || account.APISecret == "" || account.Passphrase == "" {
+		return 0, fmt.Errorf("未配置OKX API")
+	}
+
+	timestamp := time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
+	method := "GET"
+	requestPath := "/api/v5/account/balance"
+	prehash := timestamp + method + requestPath
+
+	signature := ws.okxSign(prehash, account.APISecret)
+
+	url := "https://www.okx.com" + requestPath
+
+	req, err := http.NewRequest(method, url, nil)
+	if err != nil {
+		return 0, err
+	}
+
+	req.Header.Set("OK-ACCESS-KEY", account.APIKey)
+	req.Header.Set("OK-ACCESS-SIGN", signature)
+	req.Header.Set("OK-ACCESS-TIMESTAMP", timestamp)
+	req.Header.Set("OK-ACCESS-PASSPHRASE", account.Passphrase)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := ws.httpClient.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, err
+	}
+
+	var result struct {
+		Code string `json:"code"`
+		Msg  string `json:"msg"`
+		Data []struct {
+			Details []struct {
+				Ccy      string `json:"ccy"`
+				CashBal  string `json:"cashBal"`
+				AvailBal string `json:"availBal"`
+			} `json:"details"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(body, &result); err != nil {
+		return 0, err
+	}
+
+	if result.Code != "0" {
+		return 0, fmt.Errorf("OKX API error: %s", result.Msg)
+	}
+
+	totalBalance := 0.0
+
+	// 🔥 只统计指定币种
+	if len(result.Data) > 0 {
+		for _, detail := range result.Data[0].Details {
+			if detail.Ccy == currency {
+				balance, _ := strconv.ParseFloat(detail.CashBal, 64)
+				totalBalance += balance
+			}
+		}
+	}
+
+	fmt.Printf("  ✓ OKX %s 余额: $%.2f\n", currency, totalBalance)
+	return totalBalance, nil
+}
+
+// getWalletBalanceByAsset 获取链上钱包指定币种余额
+func (ws *WalletService) getWalletBalanceByAsset(account *model.AdminAccount, currency string) (float64, error) {
+	if account.APIKey == "" || account.APISecret == "" {
+		return 0, fmt.Errorf("未配置Wallet地址或API Key")
+	}
+
+	walletAddress := account.APIKey
+	etherscanAPIKey := account.APISecret
+
+	var contractAddress string
+	if currency == "USDT" {
+		contractAddress = "0xdac17f958d2ee523a2206206994597c13d831ec7"
+	} else if currency == "USDC" {
+		contractAddress = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+	} else {
+		return 0, fmt.Errorf("不支持的币种: %s", currency)
+	}
+
+	url := fmt.Sprintf(
+		"https://api.etherscan.io/api?module=account&action=tokenbalance&contractaddress=%s&address=%s&tag=latest&apikey=%s",
+		contractAddress, walletAddress, etherscanAPIKey,
+	)
+
+	resp, err := ws.httpClient.Get(url)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, err
+	}
+
+	var result struct {
+		Status  string `json:"status"`
+		Message string `json:"message"`
+		Result  string `json:"result"`
+	}
+
+	if err := json.Unmarshal(body, &result); err != nil {
+		return 0, err
+	}
+
+	if result.Status != "1" {
+		return 0, fmt.Errorf("Etherscan API error: %s", result.Message)
+	}
+
+	balanceWei := new(big.Int)
+	balanceWei.SetString(result.Result, 10)
+
+	// USDT和USDC都是6位小数
+	divisor := new(big.Float).SetInt(big.NewInt(1000000))
+	balanceFloat := new(big.Float).SetInt(balanceWei)
+	balance, _ := new(big.Float).Quo(balanceFloat, divisor).Float64()
+
+	fmt.Printf("  ✓ Wallet %s 余额: $%.2f\n", currency, balance)
+	return balance, nil
+}
