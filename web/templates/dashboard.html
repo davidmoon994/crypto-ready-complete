@@ -835,7 +835,7 @@ function logout() {
 }
     
     // 普通用户Dashboard
-    function loadNormalDashboard() {
+function loadNormalDashboard() {
     if (!authHeader) {
         console.error('authHeader is empty, re-checking auth');
         if (!checkAuth()) {
@@ -856,7 +856,7 @@ setInterval(() => {
 }, 60000);
     
     // 渲染API用户Dashboard
- function renderAPIDashboard(data) {
+    function renderAPIDashboard(data) {
     // 如果用户还没有设置API密钥
     if (!data.has_api_keys) {
         showAPIKeySetupForm();
@@ -869,10 +869,10 @@ setInterval(() => {
         rechargesSection.style.display = 'none';
     }
     
-    // 修改总览卡片标题和内容
-    const cards = document.querySelectorAll('.summary-card');
+    // 🔥 修改：使用.stat-card而不是.summary-card
+    const cards = document.querySelectorAll('.stat-card');
     if (cards.length >= 4) {
-        // 🔥 获取summary数据
+        // 获取summary数据
         const summary = data.summary || {};
         const initialBalance = summary.total_recharge || data.initial_balance || 0;
         const currentBalance = summary.current_value || data.current_balance || 0;
@@ -922,7 +922,7 @@ setInterval(() => {
     // 添加刷新按钮
     addAPIRefreshButton();
     
-    // 🔥 修复：确保定时刷新时authHeader存在
+    // 修复：确保定时刷新时authHeader存在
     setInterval(() => {
         if (authHeader && checkAuth()) {
             refreshAPIData();
