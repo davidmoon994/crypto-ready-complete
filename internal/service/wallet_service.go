@@ -1174,7 +1174,14 @@ func (ws *WalletService) getBinanceFuturesBalanceByAsset(account *model.AdminAcc
 	}
 
 	if err := json.Unmarshal(body, &balances); err != nil {
-		fmt.Printf("[调试] JSON解析失败: %v\n", err)
+		// 检查是否是错误对象
+		var apiErr struct {
+			Code int    `json:"code"`
+			Msg  string `json:"msg"`
+		}
+		if err2 := json.Unmarshal(body, &apiErr); err2 == nil {
+			return 0, fmt.Errorf("Binance API error [%d]: %s", apiErr.Code, apiErr.Msg)
+		}
 		return 0, err
 	}
 

@@ -1179,227 +1179,238 @@ async function saveAPIKeys(e) {
 }
     
     // 创建API交易信息区域
-function createAPITradingSection(data) {
-        const container = document.querySelector('.container');
-        
-        // 持仓列表
-        const positionsHTML = `
-            <div class="section">
-                <h2>当前持仓 (${data.positions.length})</h2>
-                <div class="table-container">
-                    <table class="desktop-table">
-                        <thead>
-                            <tr>
-                                <th>交易对</th>
-                                <th>方向</th>
-                                <th>数量</th>
-                                <th>开仓价</th>
-                                <th>标记价</th>
-                                <th>未实现盈亏</th>
-                                <th>盈亏率</th>
-                                <th>杠杆</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${data.positions.map(pos => `
-                                <tr>
-                                    <td>${pos.symbol}</td>
-                                    <td><span class="badge ${pos.side === 'LONG' ? 'long' : 'short'}">${pos.side}</span></td>
-                                    <td>${pos.size.toFixed(4)}</td>
-                                    <td>$${pos.entry_price.toFixed(2)}</td>
-                                    <td>$${pos.mark_price.toFixed(2)}</td>
-                                    <td style="color: ${pos.unrealized_pnl >= 0 ? '#10b981' : '#ef4444'}">
-                                        ${pos.unrealized_pnl >= 0 ? '+' : ''}$${pos.unrealized_pnl.toFixed(2)}
-                                    </td>
-                                    <td style="color: ${pos.unrealized_pnl_rate >= 0 ? '#10b981' : '#ef4444'}">
-                                        ${pos.unrealized_pnl_rate >= 0 ? '+' : ''}${pos.unrealized_pnl_rate.toFixed(2)}%
-                                    </td>
-                                    <td>${pos.leverage}x</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                    
-                    <!-- 移动端卡片 -->
-                    <div class="mobile-cards">
-                        ${data.positions.map(pos => `
-                            <div class="mobile-card">
-                                <div class="mobile-card-header">
-                                    <span style="font-weight:600; font-size:16px;">${pos.symbol}</span>
-                                    <span class="badge ${pos.side === 'LONG' ? 'long' : 'short'}">${pos.side}</span>
-                                </div>
-                                <div class="mobile-card-row">
-                                    <span class="mobile-card-label">数量</span>
-                                    <span class="mobile-card-value">${pos.size.toFixed(4)}</span>
-                                </div>
-                                <div class="mobile-card-row">
-                                    <span class="mobile-card-label">开仓价</span>
-                                    <span class="mobile-card-value">$${pos.entry_price.toFixed(2)}</span>
-                                </div>
-                                <div class="mobile-card-row">
-                                    <span class="mobile-card-label">标记价</span>
-                                    <span class="mobile-card-value">$${pos.mark_price.toFixed(2)}</span>
-                                </div>
-                                <div class="mobile-card-row">
-                                    <span class="mobile-card-label">未实现盈亏</span>
-                                    <span class="mobile-card-value" style="color: ${pos.unrealized_pnl >= 0 ? '#10b981' : '#ef4444'}">
-                                        ${pos.unrealized_pnl >= 0 ? '+' : ''}$${pos.unrealized_pnl.toFixed(2)}
-                                    </span>
-                                </div>
-                                <div class="mobile-card-row">
-                                    <span class="mobile-card-label">盈亏率</span>
-                                    <span class="mobile-card-value" style="color: ${pos.unrealized_pnl_rate >= 0 ? '#10b981' : '#ef4444'}">
-                                        ${pos.unrealized_pnl_rate >= 0 ? '+' : ''}${pos.unrealized_pnl_rate.toFixed(2)}%
-                                    </span>
-                                </div>
-                                <div class="mobile-card-row">
-                                    <span class="mobile-card-label">杠杆</span>
-                                    <span class="mobile-card-value">${pos.leverage}x</span>
-                                </div>
-                            </div>
-                        `).join('')}
-                    </div>
-                </div>
-            </div>
-        `;
-        
-        // 委托列表
-        const ordersHTML = `
-            <div class="section">
-                <h2>当前委托 (${data.orders.length})</h2>
-                <div class="table-container">
-                    <table class="desktop-table">
-                        <thead>
-                            <tr>
-                                <th>交易对</th>
-                                <th>方向</th>
-                                <th>类型</th>
-                                <th>价格</th>
-                                <th>数量</th>
-                                <th>已成交</th>
-                                <th>时间</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${data.orders.map(ord => `
-                                <tr>
-                                    <td>${ord.symbol}</td>
-                                    <td><span class="badge ${ord.side === 'BUY' ? 'long' : 'short'}">${ord.side}</span></td>
-                                    <td>${ord.type}</td>
-                                    <td>$${ord.price.toFixed(2)}</td>
-                                    <td>${ord.orig_qty.toFixed(4)}</td>
-                                    <td>${ord.executed_qty.toFixed(4)}</td>
-                                    <td>${ord.time}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                    
-                    <!-- 移动端卡片 -->
-                    <div class="mobile-cards">
-                        ${data.orders.map(ord => `
-                            <div class="mobile-card">
-                                <div class="mobile-card-header">
-                                    <span style="font-weight:600; font-size:16px;">${ord.symbol}</span>
-                                    <span class="badge ${ord.side === 'BUY' ? 'long' : 'short'}">${ord.side}</span>
-                                </div>
-                                <div class="mobile-card-row">
-                                    <span class="mobile-card-label">类型</span>
-                                    <span class="mobile-card-value">${ord.type}</span>
-                                </div>
-                                <div class="mobile-card-row">
-                                    <span class="mobile-card-label">价格</span>
-                                    <span class="mobile-card-value">$${ord.price.toFixed(2)}</span>
-                                </div>
-                                <div class="mobile-card-row">
-                                    <span class="mobile-card-label">数量</span>
-                                    <span class="mobile-card-value">${ord.orig_qty.toFixed(4)}</span>
-                                </div>
-                                <div class="mobile-card-row">
-                                    <span class="mobile-card-label">已成交</span>
-                                    <span class="mobile-card-value">${ord.executed_qty.toFixed(4)}</span>
-                                </div>
-                                <div class="mobile-card-row">
-                                    <span class="mobile-card-label">时间</span>
-                                    <span class="mobile-card-value">${ord.time}</span>
-                                </div>
-                            </div>
-                        `).join('')}
-                    </div>
-                </div>
-            </div>
-        `;
-        
-        // 历史记录
-        const historyHTML = `
-            <div class="section">
-                <h2>历史记录 (最近${data.history_trades.length}条)</h2>
-                <div class="table-container">
-                    <table class="desktop-table">
-                        <thead>
-                            <tr>
-                                <th>交易对</th>
-                                <th>方向</th>
-                                <th>开仓时间</th>
-                                <th>平仓时间</th>
-                                <th>数量</th>
-                                <th>已实现盈亏</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${data.history_trades.map(trade => `
-                                <tr>
-                                    <td>${trade.symbol}</td>
-                                    <td><span class="badge ${trade.side === 'BUY' ? 'long' : 'short'}">${trade.side}</span></td>
-                                    <td>${trade.open_time}</td>
-                                    <td>${trade.close_time}</td>
-                                    <td>${trade.quantity.toFixed(4)}</td>
-                                    <td style="color: ${trade.realized_pnl >= 0 ? '#10b981' : '#ef4444'}">
-                                        ${trade.realized_pnl >= 0 ? '+' : ''}$${trade.realized_pnl.toFixed(2)}
-                                    </td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                    
-                    <!-- 移动端卡片 -->
-                    <div class="mobile-cards">
-                        ${data.history_trades.map(trade => `
-                            <div class="mobile-card">
-                                <div class="mobile-card-header">
-                                    <span style="font-weight:600; font-size:16px;">${trade.symbol}</span>
-                                    <span class="badge ${trade.side === 'BUY' ? 'long' : 'short'}">${trade.side}</span>
-                                </div>
-                                <div class="mobile-card-row">
-                                    <span class="mobile-card-label">开仓时间</span>
-                                    <span class="mobile-card-value">${trade.open_time}</span>
-                                </div>
-                                <div class="mobile-card-row">
-                                    <span class="mobile-card-label">平仓时间</span>
-                                    <span class="mobile-card-value">${trade.close_time}</span>
-                                </div>
-                                <div class="mobile-card-row">
-                                    <span class="mobile-card-label">数量</span>
-                                    <span class="mobile-card-value">${trade.quantity.toFixed(4)}</span>
-                                </div>
-                                <div class="mobile-card-row">
-                                    <span class="mobile-card-label">盈亏</span>
-                                    <span class="mobile-card-value" style="color: ${trade.realized_pnl >= 0 ? '#10b981' : '#ef4444'}">
-                                        ${trade.realized_pnl >= 0 ? '+' : ''}$${trade.realized_pnl.toFixed(2)}
-                                    </span>
-                                </div>
-                            </div>
-                        `).join('')}
-                    </div>
-                </div>
-            </div>
-        `;
-        
-        container.insertAdjacentHTML('beforeend', positionsHTML);
-        container.insertAdjacentHTML('beforeend', ordersHTML);
-        container.insertAdjacentHTML('beforeend', historyHTML);
+    function createAPITradingSection(data) {
+    // 🔥 防御性检查
+    if (!data) {
+        console.warn('createAPITradingSection: data为空');
+        return;
     }
-    
+
+    const positions = data.positions || [];
+    const orders = data.orders || [];
+    const historyTrades = data.history_trades || [];
+
+    const container = document.querySelector('.container');
+    if (!container) {
+        console.warn('createAPITradingSection: container不存在');
+        return;
+    }
+
+    // 持仓列表
+    const positionsHTML = `
+        <div class="section">
+            <h2>当前持仓 (${positions.length})</h2>
+            <div class="table-container">
+                <table class="desktop-table">
+                    <thead>
+                        <tr>
+                            <th>交易对</th>
+                            <th>方向</th>
+                            <th>数量</th>
+                            <th>开仓价</th>
+                            <th>标记价</th>
+                            <th>未实现盈亏</th>
+                            <th>盈亏率</th>
+                            <th>杠杆</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${positions.map(pos => `
+                            <tr>
+                                <td>${pos.symbol || '-'}</td>
+                                <td><span class="badge ${pos.side === 'LONG' ? 'long' : 'short'}">${pos.side || '-'}</span></td>
+                                <td>${(pos.size || 0).toFixed(4)}</td>
+                                <td>$${(pos.entry_price || 0).toFixed(2)}</td>
+                                <td>$${(pos.mark_price || 0).toFixed(2)}</td>
+                                <td style="color: ${(pos.unrealized_pnl || 0) >= 0 ? '#10b981' : '#ef4444'}">
+                                    ${(pos.unrealized_pnl >= 0 ? '+' : '')}$${(pos.unrealized_pnl || 0).toFixed(2)}
+                                </td>
+                                <td style="color: ${(pos.unrealized_pnl_rate || 0) >= 0 ? '#10b981' : '#ef4444'}">
+                                    ${(pos.unrealized_pnl_rate >= 0 ? '+' : '')}${(pos.unrealized_pnl_rate || 0).toFixed(2)}%
+                                </td>
+                                <td>${pos.leverage || 0}x</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+
+                <!-- 移动端卡片 -->
+                <div class="mobile-cards">
+                    ${positions.map(pos => `
+                        <div class="mobile-card">
+                            <div class="mobile-card-header">
+                                <span style="font-weight:600; font-size:16px;">${pos.symbol || '-'}</span>
+                                <span class="badge ${pos.side === 'LONG' ? 'long' : 'short'}">${pos.side || '-'}</span>
+                            </div>
+                            <div class="mobile-card-row">
+                                <span class="mobile-card-label">数量</span>
+                                <span class="mobile-card-value">${(pos.size || 0).toFixed(4)}</span>
+                            </div>
+                            <div class="mobile-card-row">
+                                <span class="mobile-card-label">开仓价</span>
+                                <span class="mobile-card-value">$${(pos.entry_price || 0).toFixed(2)}</span>
+                            </div>
+                            <div class="mobile-card-row">
+                                <span class="mobile-card-label">标记价</span>
+                                <span class="mobile-card-value">$${(pos.mark_price || 0).toFixed(2)}</span>
+                            </div>
+                            <div class="mobile-card-row">
+                                <span class="mobile-card-label">未实现盈亏</span>
+                                <span class="mobile-card-value" style="color: ${(pos.unrealized_pnl || 0) >= 0 ? '#10b981' : '#ef4444'}">
+                                    ${(pos.unrealized_pnl >= 0 ? '+' : '')}$${(pos.unrealized_pnl || 0).toFixed(2)}
+                                </span>
+                            </div>
+                            <div class="mobile-card-row">
+                                <span class="mobile-card-label">盈亏率</span>
+                                <span class="mobile-card-value" style="color: ${(pos.unrealized_pnl_rate || 0) >= 0 ? '#10b981' : '#ef4444'}">
+                                    ${(pos.unrealized_pnl_rate >= 0 ? '+' : '')}${(pos.unrealized_pnl_rate || 0).toFixed(2)}%
+                                </span>
+                            </div>
+                            <div class="mobile-card-row">
+                                <span class="mobile-card-label">杠杆</span>
+                                <span class="mobile-card-value">${pos.leverage || 0}x</span>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        </div>
+    `;
+
+    // 委托列表
+    const ordersHTML = `
+        <div class="section">
+            <h2>当前委托 (${orders.length})</h2>
+            <div class="table-container">
+                <table class="desktop-table">
+                    <thead>
+                        <tr>
+                            <th>交易对</th>
+                            <th>方向</th>
+                            <th>类型</th>
+                            <th>价格</th>
+                            <th>数量</th>
+                            <th>已成交</th>
+                            <th>时间</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${orders.map(ord => `
+                            <tr>
+                                <td>${ord.symbol || '-'}</td>
+                                <td><span class="badge ${ord.side === 'BUY' ? 'long' : 'short'}">${ord.side || '-'}</span></td>
+                                <td>${ord.type || '-'}</td>
+                                <td>$${(ord.price || 0).toFixed(2)}</td>
+                                <td>${(ord.orig_qty || 0).toFixed(4)}</td>
+                                <td>${(ord.executed_qty || 0).toFixed(4)}</td>
+                                <td>${ord.time || '-'}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+                <!-- 移动端卡片 -->
+                <div class="mobile-cards">
+                    ${orders.map(ord => `
+                        <div class="mobile-card">
+                            <div class="mobile-card-header">
+                                <span style="font-weight:600; font-size:16px;">${ord.symbol || '-'}</span>
+                                <span class="badge ${ord.side === 'BUY' ? 'long' : 'short'}">${ord.side || '-'}</span>
+                            </div>
+                            <div class="mobile-card-row">
+                                <span class="mobile-card-label">类型</span>
+                                <span class="mobile-card-value">${ord.type || '-'}</span>
+                            </div>
+                            <div class="mobile-card-row">
+                                <span class="mobile-card-label">价格</span>
+                                <span class="mobile-card-value">$${(ord.price || 0).toFixed(2)}</span>
+                            </div>
+                            <div class="mobile-card-row">
+                                <span class="mobile-card-label">数量</span>
+                                <span class="mobile-card-value">${(ord.orig_qty || 0).toFixed(4)}</span>
+                            </div>
+                            <div class="mobile-card-row">
+                                <span class="mobile-card-label">已成交</span>
+                                <span class="mobile-card-value">${(ord.executed_qty || 0).toFixed(4)}</span>
+                            </div>
+                            <div class="mobile-card-row">
+                                <span class="mobile-card-label">时间</span>
+                                <span class="mobile-card-value">${ord.time || '-'}</span>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        </div>
+    `;
+
+    // 历史记录
+    const historyHTML = `
+        <div class="section">
+            <h2>历史记录 (最近${historyTrades.length}条)</h2>
+            <div class="table-container">
+                <table class="desktop-table">
+                    <thead>
+                        <tr>
+                            <th>交易对</th>
+                            <th>方向</th>
+                            <th>开仓时间</th>
+                            <th>平仓时间</th>
+                            <th>数量</th>
+                            <th>已实现盈亏</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${historyTrades.map(trade => `
+                            <tr>
+                                <td>${trade.symbol || '-'}</td>
+                                <td><span class="badge ${trade.side === 'BUY' ? 'long' : 'short'}">${trade.side || '-'}</span></td>
+                                <td>${trade.open_time || '-'}</td>
+                                <td>${trade.close_time || '-'}</td>
+                                <td>${(trade.quantity || 0).toFixed(4)}</td>
+                                <td style="color: ${(trade.realized_pnl || 0) >= 0 ? '#10b981' : '#ef4444'}">
+                                    ${(trade.realized_pnl >= 0 ? '+' : '')}$${(trade.realized_pnl || 0).toFixed(2)}
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+                <!-- 移动端卡片 -->
+                <div class="mobile-cards">
+                    ${historyTrades.map(trade => `
+                        <div class="mobile-card">
+                            <div class="mobile-card-header">
+                                <span style="font-weight:600; font-size:16px;">${trade.symbol || '-'}</span>
+                                <span class="badge ${trade.side === 'BUY' ? 'long' : 'short'}">${trade.side || '-'}</span>
+                            </div>
+                            <div class="mobile-card-row">
+                                <span class="mobile-card-label">开仓时间</span>
+                                <span class="mobile-card-value">${trade.open_time || '-'}</span>
+                            </div>
+                            <div class="mobile-card-row">
+                                <span class="mobile-card-label">平仓时间</span>
+                                <span class="mobile-card-value">${trade.close_time || '-'}</span>
+                            </div>
+                            <div class="mobile-card-row">
+                                <span class="mobile-card-label">数量</span>
+                                <span class="mobile-card-value">${(trade.quantity || 0).toFixed(4)}</span>
+                            </div>
+                            <div class="mobile-card-row">
+                                <span class="mobile-card-label">盈亏</span>
+                                <span class="mobile-card-value" style="color: ${(trade.realized_pnl || 0) >= 0 ? '#10b981' : '#ef4444'}">
+                                    ${(trade.realized_pnl >= 0 ? '+' : '')}$${(trade.realized_pnl || 0).toFixed(2)}
+                                </span>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        </div>
+    `;
+
+    container.insertAdjacentHTML('beforeend', positionsHTML);
+    container.insertAdjacentHTML('beforeend', ordersHTML);
+    container.insertAdjacentHTML('beforeend', historyHTML);
+}
    // 添加API刷新和设置按钮
 function addAPIRefreshButton() {
     const container = document.querySelector('.container');
