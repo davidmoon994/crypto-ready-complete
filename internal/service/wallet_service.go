@@ -1143,7 +1143,6 @@ func (ws *WalletService) getBinanceFuturesBalanceByAsset(account *model.AdminAcc
 	timestamp := fmt.Sprintf("%d", time.Now().UnixNano()/1000000)
 	queryString := fmt.Sprintf("timestamp=%s", timestamp)
 	signature := ws.binanceSign(queryString, account.APISecret)
-
 	url := "https://fapi.binance.com/fapi/v2/balance?" + queryString + "&signature=" + signature
 
 	req, err := http.NewRequest("GET", url, nil)
@@ -1163,6 +1162,10 @@ func (ws *WalletService) getBinanceFuturesBalanceByAsset(account *model.AdminAcc
 		return 0, err
 	}
 
+	// 🔥 添加调试日志
+	fmt.Printf("[调试] Binance API响应状态: %d\n", resp.StatusCode)
+	fmt.Printf("[调试] 响应内容: %s\n", string(body))
+
 	var balances []struct {
 		Asset              string `json:"asset"`
 		Balance            string `json:"balance"`
@@ -1171,17 +1174,24 @@ func (ws *WalletService) getBinanceFuturesBalanceByAsset(account *model.AdminAcc
 	}
 
 	if err := json.Unmarshal(body, &balances); err != nil {
+		fmt.Printf("[调试] JSON解析失败: %v\n", err)
 		return 0, err
 	}
 
-	// 🔥 只统计指定币种（USDT或USDC）
+	// 🔥 添加调试日志
+	fmt.Printf("[调试] 查找币种: %s, 总共有 %d 个资产\n", currency, len(balances))
+
+	// 只统计指定币种（USDT或USDC）
 	for _, b := range balances {
+		fmt.Printf("[调试] 资产: %s, 余额: %s\n", b.Asset, b.Balance)
 		if b.Asset == currency {
 			balance, _ := strconv.ParseFloat(b.Balance, 64)
+			fmt.Printf("[调试] ✓ 找到 %s, 余额=$%.2f\n", currency, balance)
 			return balance, nil
 		}
 	}
 
+	fmt.Printf("[调试] ⚠️  未找到币种 %s\n", currency)
 	return 0, nil
 }
 

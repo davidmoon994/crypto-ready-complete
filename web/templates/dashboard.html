@@ -564,6 +564,7 @@
 </div>
 
 <script>
+    let apiRefreshInterval = null;  // 🔥 全局定时器ID
     const API_URL = window.location.origin + '/api';
     let authHeader = '';
     
@@ -944,8 +945,13 @@ function renderAPIDashboard(data) {
     // 添加刷新按钮
     addAPIRefreshButton();
     
-    // 修复：确保定时刷新时authHeader存在
-    setInterval(() => {
+    // 🔥 修复：清除旧的定时器
+    if (apiRefreshInterval) {
+        clearInterval(apiRefreshInterval);
+    }
+    
+    // 🔥 修复：只创建一次定时器
+    apiRefreshInterval = setInterval(() => {
         if (authHeader && checkAuth()) {
             refreshAPIData();
         }
@@ -1537,7 +1543,7 @@ async function updateAPIKeys(e) {
     }
 }
  // 刷新API用户数据
-async function refreshAPIData() {
+ async function refreshAPIData() {
     try {
         const response = await fetch(`${API_URL}/dashboard/api`, {
             headers: { 'Authorization': authHeader }
@@ -1545,17 +1551,64 @@ async function refreshAPIData() {
         
         if (response.ok) {
             const data = await response.json();
-            console.log('刷新API数据:', data);
+            console.log('刷新API数据成功');
             
-            // 🔥 直接重新渲染，不要刷新整个页面
-            renderAPIDashboard(data);
+            // 🔥 只更新数据，不要重新渲染整个页面
+            updateAPIDashboardData(data);
         } else {
             console.error('刷新失败:', response.status);
-            alert('刷新失败，请稍后重试');
         }
     } catch (error) {
         console.error('刷新失败:', error);
-        alert('网络错误，请稍后重试');
+    }
+}
+
+// 🔥 新增：只更新数据，不重新创建定时器
+function updateAPIDashboardData(data) {
+    const summary = data.summary || {};
+    const initialBalance = summary.total_recharge || data.initial_balance || 0;
+    const currentBalance = summary.current_value || data.current_balance || 0;
+    const totalProfit = summary.total_profit || data.total_profit || 0;
+    const profitRate = summary.total_profit_rate || data.profit_rate || 0;
+    
+    // 更新4张卡片
+    const cards = document.querySelectorAll('.stat-card');
+    if (cards.length >= 4) {
+        const card2Value = cards[1].querySelector('.value');
+        if (card2Value) card2Value.textContent = `$${currentBalance.toFixed(2)}`;
+        
+        const profitColor = totalProfit >= 0 ? '#10b981' : '#ef4444';
+        const profitSign = totalProfit >= 0 ? '+' : '';
+        
+        const card3Value = cards[2].querySelector('.value');
+        if (card3Value) {
+            card3Value.textContent = `${profitSign}$${totalProfit.toFixed(2)}`;
+            card3Value.style.color = profitColor;
+        }
+        
+        const card4Value = cards[3].querySelector('.value');
+        if (card4Value) {
+            card4Value.textContent = `${profitSign}${profitRate.toFixed(2)}%`;
+            card4Value.style.color = profitColor;
+        }
+    }
+    
+    // 更新收益率
+    const monthlyRateEl = document.getElementById('monthlyRate');
+    const quarterlyRateEl = document.getElementById('quarterlyRate');
+    const annualRateEl = document.getElementById('annualRate');
+    
+    if (monthlyRateEl) {
+        const monthlyRate = summary.monthly_rate || 0;
+        monthlyRateEl.textContent = `${monthlyRate >= 0 ? '+' : ''}${monthlyRate.toFixed(2)}%`;
+    }
+    if (quarterlyRateEl) {
+        const quarterlyRate = summary.quarterly_rate || 0;
+        quarterlyRateEl.textContent = `${quarterlyRate >= 0 ? '+' : ''}${quarterlyRate.toFixed(2)}%`;
+    }
+    if (annualRateEl) {
+        const annualRate = summary.annual_rate || 0;
+        annualRateEl.textContent = `${annualRate >= 0 ? '+' : ''}${annualRate.toFixed(2)}%`;
     }
 }
     
