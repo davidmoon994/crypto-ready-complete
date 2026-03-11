@@ -855,8 +855,7 @@ setInterval(() => {
     checkUserType();
 }, 60000);
     
-    // 渲染API用户Dashboard
-    function renderAPIDashboard(data) {
+function renderAPIDashboard(data) {
     // 如果用户还没有设置API密钥
     if (!data.has_api_keys) {
         showAPIKeySetupForm();
@@ -869,7 +868,7 @@ setInterval(() => {
         rechargesSection.style.display = 'none';
     }
     
-    // 🔥 修改：使用.stat-card而不是.summary-card
+    // 修改总览卡片标题和内容
     const cards = document.querySelectorAll('.stat-card');
     if (cards.length >= 4) {
         // 获取summary数据
@@ -896,7 +895,7 @@ setInterval(() => {
         // 第二个卡片：当前总资金
         const card2Title = cards[1].querySelector('h3');
         const card2Value = cards[1].querySelector('.value');
-        if (card2Title) card2Title.textContent = '当前总资金';
+        if (card2Title) card2Title.textContent = '当前保证金余额';
         if (card2Value) card2Value.textContent = `$${currentBalance.toFixed(2)}`;
         
         // 第三个卡片：总盈亏
@@ -913,6 +912,29 @@ setInterval(() => {
         if (card4Value) {
             card4Value.textContent = `${profitSign}${profitRate.toFixed(2)}%`;
             card4Value.style.color = profitColor;
+        }
+        
+        // 🔥 新增：更新收益率分析卡片
+        const monthlyRateEl = document.getElementById('monthlyRate');
+        const quarterlyRateEl = document.getElementById('quarterlyRate');
+        const annualRateEl = document.getElementById('annualRate');
+        const avgHoldDaysEl = document.getElementById('avgHoldDays');
+        
+        if (monthlyRateEl) {
+            const monthlyRate = summary.monthly_rate || 0;
+            monthlyRateEl.textContent = `${monthlyRate >= 0 ? '+' : ''}${monthlyRate.toFixed(2)}%`;
+        }
+        if (quarterlyRateEl) {
+            const quarterlyRate = summary.quarterly_rate || 0;
+            quarterlyRateEl.textContent = `${quarterlyRate >= 0 ? '+' : ''}${quarterlyRate.toFixed(2)}%`;
+        }
+        if (annualRateEl) {
+            const annualRate = summary.annual_rate || 0;
+            annualRateEl.textContent = `${annualRate >= 0 ? '+' : ''}${annualRate.toFixed(2)}%`;
+        }
+        if (avgHoldDaysEl) {
+            const avgHoldDays = summary.avg_hold_days || 0;
+            avgHoldDaysEl.textContent = `${avgHoldDays}天`;
         }
     }
     
@@ -1372,35 +1394,170 @@ function createAPITradingSection(data) {
         container.insertAdjacentHTML('beforeend', historyHTML);
     }
     
-    // 添加API刷新按钮
+   // 添加API刷新和设置按钮
 function addAPIRefreshButton() {
-        const container = document.querySelector('.container');
-        const refreshButtonHTML = `
-            <div style="text-align: center; margin: 20px 0;">
-                <button class="btn" onclick="refreshAPIData()">🔄 刷新数据</button>
-            </div>
-        `;
-        container.insertAdjacentHTML('beforeend', refreshButtonHTML);
+    const container = document.querySelector('.container');
+    const buttonsHTML = `
+        <div style="text-align: center; margin: 20px 0; display: flex; gap: 15px; justify-content: center; flex-wrap: wrap;">
+            <button class="btn" onclick="refreshAPIData()">🔄 刷新数据</button>
+            <button class="btn" onclick="showAPISettingsModal()" style="background: #f59e0b;">⚙️ 设置API</button>
+        </div>
+    `;
+    container.insertAdjacentHTML('beforeend', buttonsHTML);
+}
+    // 显示API设置弹窗（用于已设置API的用户重新配置）
+function showAPISettingsModal() {
+    // 检查是否已存在modal
+    const existingModal = document.getElementById('apiSettingsModal');
+    if (existingModal) {
+        existingModal.remove();
     }
     
-    // 刷新API用户数据
- async function refreshAPIData() {
-        try {
-            const response = await fetch(`${API_URL}/dashboard/api`, {
-                headers: { 'Authorization': authHeader }
-            });
+    const modal = document.createElement('div');
+    modal.id = 'apiSettingsModal';
+    modal.className = 'modal';
+    modal.style.display = 'flex';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 600px;">
+            <h2 style="text-align: center; margin-bottom: 30px;">⚙️ API设置</h2>
             
-            if (response.ok) {
-                const data = await response.json();
+            <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
+                <strong>⚠️ 注意：</strong> 重新设置API密钥将覆盖当前配置
+            </div>
+            
+            <form id="updateAPIKeysForm">
+                <div class="form-group">
+                    <label>📊 API类型</label>
+                    <select id="updateApiType" required onchange="toggleUpdatePassphraseField()">
+                        <option value="">请选择交易所</option>
+                        <option value="Binance">Binance (币安)</option>
+                        <option value="OKX">OKX (欧易)</option>
+                    </select>
+                </div>
                 
-                // 重新渲染页面（简单方式：刷新整个页面）
-                location.reload();
-            }
-        } catch (error) {
-            console.error('刷新失败:', error);
+                <div class="form-group">
+                    <label>🔐 API Key</label>
+                    <input type="text" id="updateApiKey" required placeholder="请输入新的API Key">
+                </div>
+                
+                <div class="form-group">
+                    <label>🔑 API Secret</label>
+                    <input type="password" id="updateApiSecret" required placeholder="请输入新的API Secret">
+                </div>
+                
+                <div class="form-group" id="updatePassphraseGroup" style="display:none;">
+                    <label>🔒 Passphrase (仅OKX需要)</label>
+                    <input type="password" id="updateApiPassphrase" placeholder="请输入Passphrase">
+                </div>
+                
+                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                    <button type="submit" class="btn" style="flex: 1;">💾 保存并更新</button>
+                    <button type="button" class="btn" onclick="closeAPISettingsModal()" 
+                            style="flex: 1; background: #999;">❌ 取消</button>
+                </div>
+            </form>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    
+    // 绑定提交事件
+    document.getElementById('updateAPIKeysForm').addEventListener('submit', updateAPIKeys);
+    
+    // 点击modal外部关闭
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            closeAPISettingsModal();
+        }
+    });
+}
+
+// 关闭API设置弹窗
+function closeAPISettingsModal() {
+    const modal = document.getElementById('apiSettingsModal');
+    if (modal) {
+        modal.remove();
+    }
+}
+
+// 切换Passphrase字段（更新API用）
+function toggleUpdatePassphraseField() {
+    const apiType = document.getElementById('updateApiType').value;
+    const passphraseGroup = document.getElementById('updatePassphraseGroup');
+    const passphraseInput = document.getElementById('updateApiPassphrase');
+    
+    if (apiType === 'OKX') {
+        passphraseGroup.style.display = 'block';
+        passphraseInput.required = true;
+    } else {
+        passphraseGroup.style.display = 'none';
+        passphraseInput.required = false;
+    }
+}
+
+// 更新API密钥
+async function updateAPIKeys(e) {
+    e.preventDefault();
+    
+    const apiType = document.getElementById('updateApiType').value;
+    const apiKey = document.getElementById('updateApiKey').value;
+    const apiSecret = document.getElementById('updateApiSecret').value;
+    const apiPassphrase = document.getElementById('updateApiPassphrase')?.value || '';
+    
+    if (!apiType || !apiKey || !apiSecret) {
+        alert('请填写完整的API信息');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_URL}/dashboard/api/keys`, {
+            method: 'POST',
+            headers: {
+                'Authorization': authHeader,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                api_type: apiType,
+                api_key: apiKey,
+                api_secret: apiSecret,
+                api_passphrase: apiPassphrase
+            })
+        });
+        
+        if (response.ok) {
+            alert('✅ API密钥已更新！页面将刷新...');
+            closeAPISettingsModal();
+            location.reload();
+        } else {
+            const data = await response.json();
+            alert('❌ 更新失败: ' + (data.error || '未知错误'));
+        }
+    } catch (error) {
+        console.error('更新API密钥失败:', error);
+        alert('❌ 网络错误，请稍后重试');
+    }
+}
+ // 刷新API用户数据
+async function refreshAPIData() {
+    try {
+        const response = await fetch(`${API_URL}/dashboard/api`, {
+            headers: { 'Authorization': authHeader }
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            console.log('刷新API数据:', data);
+            
+            // 🔥 直接重新渲染，不要刷新整个页面
+            renderAPIDashboard(data);
+        } else {
+            console.error('刷新失败:', response.status);
             alert('刷新失败，请稍后重试');
         }
+    } catch (error) {
+        console.error('刷新失败:', error);
+        alert('网络错误，请稍后重试');
     }
+}
     
     // 监听窗口大小变化，自动切换布局
     let resizeTimer;

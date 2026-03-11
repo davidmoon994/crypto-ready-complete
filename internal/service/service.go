@@ -1095,14 +1095,14 @@ func (s *Service) GetAPIDashboardData(userID int) (*model.APIDashboardData, erro
 		return nil, errors.New("非API用户")
 	}
 
-	// 🔥 检查是否已设置API密钥
+	// 检查是否已设置API密钥
 	if user.APIKey == "" || user.APISecret == "" {
 		return &model.APIDashboardData{
 			HasAPIKeys: false,
 		}, nil
 	}
 
-	// 🔥 使用用户自己的API密钥查询
+	// 使用用户自己的API密钥查询
 	userAccount := &model.AdminAccount{
 		AccountType: user.APIType,
 		APIKey:      user.APIKey,
@@ -1110,10 +1110,24 @@ func (s *Service) GetAPIDashboardData(userID int) (*model.APIDashboardData, erro
 		Passphrase:  user.APIPassphrase,
 	}
 
-	currentBalance, err := s.walletService.GetBalance(userAccount)
-	if err != nil {
-		return nil, fmt.Errorf("获取余额失败: %v", err)
+	// 🔥 修复：使用 GetBalanceByAsset 获取USDC余额（U本位合约）
+	// Binance U本位合约使用USDC，OKX使用USDT
+	var currency string
+	if user.APIType == "Binance" {
+		currency = "USDC" // Binance U本位合约用USDC
+	} else if user.APIType == "OKX" {
+		currency = "USDT" // OKX交易账户用USDT
+	} else {
+		return nil, errors.New("不支持的API类型")
 	}
+
+	currentBalance, err := s.walletService.GetBalanceByAsset(userAccount, currency)
+	if err != nil {
+		return nil, fmt.Errorf("获取%s余额失败: %v", currency, err)
+	}
+
+	fmt.Printf("[API用户 %d] API类型=%s, 币种=%s, 余额=$%.2f\n",
+		userID, user.APIType, currency, currentBalance)
 
 	// 计算盈亏
 	totalProfit := currentBalance - user.InitialBalance
@@ -1122,13 +1136,13 @@ func (s *Service) GetAPIDashboardData(userID int) (*model.APIDashboardData, erro
 		profitRate = (totalProfit / user.InitialBalance) * 100
 	}
 
-	// 🔥 计算持有天数
+	// 计算持有天数
 	holdDays := int(time.Since(user.CreatedAt).Hours() / 24)
 	if holdDays < 1 {
 		holdDays = 1
 	}
 
-	// 🔥 计算年化收益率
+	// 计算年化收益率
 	monthlyRate := 0.0
 	quarterlyRate := 0.0
 	annualRate := 0.0
@@ -1145,9 +1159,11 @@ func (s *Service) GetAPIDashboardData(userID int) (*model.APIDashboardData, erro
 	orders, _ := s.walletService.GetOrders(userAccount, 20)
 	historyTrades, _ := s.walletService.GetHistoryTrades(userAccount, 50)
 
+	fmt.Printf("[API用户 %d] 初始余额=$%.2f, 当前余额=$%.2f, 盈亏=$%.2f (%.2f%%), 年化=%.2f%%\n",
+		userID, user.InitialBalance, currentBalance, totalProfit, profitRate, annualRate)
+
 	return &model.APIDashboardData{
 		HasAPIKeys: true,
-		// 🔥 添加Summary字段
 		Summary: &model.DashboardSummary{
 			TotalRecharge:   user.InitialBalance,
 			CurrentValue:    currentBalance,
