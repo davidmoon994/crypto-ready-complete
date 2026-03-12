@@ -454,21 +454,22 @@ func (h *Handler) AdminCreateAPIUser(c *gin.Context) {
 
 // GetAPIDashboard 获取API用户Dashboard
 func (h *Handler) GetAPIDashboard(c *gin.Context) {
-	userIDStr, exists := c.Get("userID")
+	userID, exists := c.Get("userID")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
 		return
 	}
 
-	// 🔥 安全的类型转换
-	userID, ok := userIDStr.(int)
+	uid, ok := userID.(int)
 	if !ok {
+		fmt.Printf("❌ GetAPIDashboard: userID类型错误: %v\n", userID)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "用户ID类型错误"})
 		return
 	}
 
-	data, err := h.service.GetAPIDashboardData(userID)
+	data, err := h.service.GetAPIDashboardData(uid)
 	if err != nil {
+		fmt.Printf("❌ GetAPIDashboard错误 (用户%d): %v\n", uid, err) // 🔥 添加这行
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

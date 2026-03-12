@@ -198,31 +198,46 @@
         ========================= */
         
         async function checkUserType() {
-            try {
-                // 🔥 先尝试API用户接口
-                const response = await fetch(`${API_URL}/dashboard/api`, {
-                    headers: { 'Authorization': authHeader }
-                });
-        
-                if (!response.ok) {
-                    loadNormalDashboard();
-                    return;
-                }
-        
-                const data = await response.json();
-        
-                // 🔥 修复：检查 has_api_keys 而不是 accounts
-                if (data && typeof data.has_api_keys !== 'undefined') {
-                    renderAPIDashboard(data);
-                } else {
-                    loadNormalDashboard();
-                }
-        
-            } catch (err) {
-                console.error('检查用户类型失败:', err);
-                loadNormalDashboard();
+    try {
+        // 🔥 改进：先获取用户信息判断类型
+        const apiResponse = await fetch(`${API_URL}/dashboard/api`, {
+            headers: { 'Authorization': authHeader }
+        });
+
+        // 🔥 如果返回401/403，说明不是API用户或未登录
+        if (apiResponse.status === 401 || apiResponse.status === 403) {
+            loadNormalDashboard();
+            return;
+        }
+
+        // 🔥 如果返回500，可能是API用户但有错误
+        if (apiResponse.status === 500) {
+            console.warn('API接口500错误，尝试普通用户接口');
+            loadNormalDashboard();
+            return;
+        }
+
+        // 🔥 如果返回200，检查数据
+        if (apiResponse.ok) {
+            const data = await apiResponse.json();
+            
+            // 🔥 严格检查：必须有 has_api_keys 字段才是API用户
+            if (data && data.hasOwnProperty('has_api_keys')) {
+                console.log('✓ 检测到API用户');
+                renderAPIDashboard(data);
+                return;
             }
         }
+
+        // 🔥 默认加载普通用户
+        console.log('✓ 加载普通用户Dashboard');
+        loadNormalDashboard();
+
+    } catch (err) {
+        console.error('检查用户类型失败:', err);
+        loadNormalDashboard();
+    }
+}
         
         /* =========================
            普通用户 Dashboard
