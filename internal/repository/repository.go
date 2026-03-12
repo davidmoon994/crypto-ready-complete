@@ -969,7 +969,7 @@ func (r *Repository) UpdateUserInitialBalance(userID int, initialBalance float64
 	return err
 }
 
-// GetTotalRechargeAmountByCurrency 获取某个账户某个币种的总充值金额
+// GetTotalRechargeAmountByCurrency 获取某个账户某个币种的总充值金额（不包括系统充值）
 func (r *Repository) GetTotalRechargeAmountByCurrency(adminAccountID int, currency string) (float64, error) {
 	var totalAmount float64
 	err := r.db.QueryRow(`
@@ -977,7 +977,8 @@ func (r *Repository) GetTotalRechargeAmountByCurrency(adminAccountID int, curren
 		FROM recharges
 		WHERE admin_account_id = ? 
 		  AND currency = ? 
-		  AND is_active = 1`,
+		  AND is_active = 1
+		  AND user_id > 0`, //🔥 关键：排除系统充值
 		adminAccountID, currency,
 	).Scan(&totalAmount)
 

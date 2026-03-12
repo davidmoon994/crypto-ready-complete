@@ -472,9 +472,20 @@ func (s *Service) GetDashboardSummary(userID int) (*model.DashboardSummary, erro
 			Passphrase:  user.APIPassphrase,
 		}
 
-		currentBalance, err := s.walletService.GetBalance(userAccount)
+		// 🔥 修复1: 使用 GetBalanceByAsset 而不是 GetBalance
+		// Binance API用户查USDC，OKX API用户查USDT
+		var currency string
+		if user.APIType == "Binance" {
+			currency = "USDC"
+		} else if user.APIType == "OKX" {
+			currency = "USDT"
+		} else {
+			return nil, errors.New("不支持的API类型")
+		}
+
+		currentBalance, err := s.walletService.GetBalanceByAsset(userAccount, currency)
 		if err != nil {
-			return nil, fmt.Errorf("获取API账户余额失败: %v", err)
+			return nil, fmt.Errorf("获取API账户%s余额失败: %v", currency, err)
 		}
 
 		totalProfit := currentBalance - user.InitialBalance
@@ -483,11 +494,42 @@ func (s *Service) GetDashboardSummary(userID int) (*model.DashboardSummary, erro
 			profitRate = (totalProfit / user.InitialBalance) * 100
 		}
 
+		// 🔥 计算持有天数
+		holdDays := int(time.Since(user.CreatedAt).Hours() / 24)
+		if holdDays < 1 {
+			holdDays = 1
+		}
+
+		// 🔥 计算年化收益率
+		monthlyRate := 0.0
+		quarterlyRate := 0.0
+		annualRate := 0.0
+
+		if holdDays > 0 && profitRate != 0 {
+			dailyRate := profitRate / float64(holdDays)
+			monthlyRate = dailyRate * 30
+			quarterlyRate = dailyRate * 90
+			annualRate = dailyRate * 365
+		}
+
+		fmt.Printf("\n[API用户Dashboard] 用户ID %d:\n", userID)
+		fmt.Printf("  API类型: %s\n", user.APIType)
+		fmt.Printf("  币种: %s\n", currency)
+		fmt.Printf("  初始余额: $%.2f\n", user.InitialBalance)
+		fmt.Printf("  当前余额: $%.2f\n", currentBalance)
+		fmt.Printf("  总盈亏: $%.2f (%.2f%%)\n", totalProfit, profitRate)
+		fmt.Printf("  年化收益率: %.2f%%\n", annualRate)
+
 		return &model.DashboardSummary{
 			TotalRecharge:   user.InitialBalance,
 			CurrentValue:    currentBalance,
 			TotalProfit:     totalProfit,
 			TotalProfitRate: profitRate,
+			RechargeCount:   0,
+			MonthlyRate:     monthlyRate,
+			QuarterlyRate:   quarterlyRate,
+			AnnualRate:      annualRate,
+			AvgHoldDays:     holdDays,
 			LastUpdateTime:  time.Now().Format("2006-01-02 15:04:05"),
 		}, nil
 	}
@@ -500,26 +542,28 @@ func (s *Service) GetDashboardSummary(userID int) (*model.DashboardSummary, erro
 
 	totalRecharge := 0.0
 	totalCurrentValue := 0.0
-	totalHoldDays := 0
-	activeCount := 0
+	totalHoldDays := 0 // 🔥 修复2: 添加变量定义
+	activeCount := 0   // 🔥 修复3: 添加变量定义
+	var firstRechargeTime time.Time
 
 	for _, r := range recharges {
-		if !r.IsActive {
-			continue
+		totalRecharge += r.Amount
+		activeCount++ // 🔥 统计活跃充值数量
+
+		// 记录第一笔充值时间
+		if firstRechargeTime.IsZero() || r.CreatedAt.Before(firstRechargeTime) {
+			firstRechargeTime = r.CreatedAt
 		}
 
-		activeCount++
-		totalRecharge += r.Amount
-
-		// 🔥 关键：基于份额计算当前价值
+		// 获取管理员账户信息
 		adminAccount, err := s.repo.GetAdminAccountByID(r.AdminAccountID)
-		if err != nil || adminAccount == nil {
-			fmt.Printf("⚠️  充值ID %d: 无法获取账户信息\n", r.ID)
+		if err != nil {
+			fmt.Printf("⚠️  充值ID %d: 无法获取管理员账户\n", r.ID)
 			totalCurrentValue += r.Amount
 			continue
 		}
 
-		// 🔥 1:1份额模式：获取总充值金额
+		// 🔥 1:1份额模式：获取总充值金额（只统计用户充值，不包括系统）
 		totalRechargeAmount, err := s.repo.GetTotalRechargeAmountByCurrency(r.AdminAccountID, r.Currency)
 		if err != nil || totalRechargeAmount <= 0 {
 			fmt.Printf("⚠️  充值ID %d: 无法获取总充值金额 (currency: %s)\n", r.ID, r.Currency)
@@ -575,7 +619,7 @@ func (s *Service) GetDashboardSummary(userID int) (*model.DashboardSummary, erro
 		annualRate = dailyRate * 365
 	}
 
-	fmt.Printf("\n[Dashboard总览] 用户ID %d:\n", userID)
+	fmt.Printf("\n[普通用户Dashboard] 用户ID %d:\n", userID)
 	fmt.Printf("  总充值: $%.2f\n", totalRecharge)
 	fmt.Printf("  当前价值: $%.2f\n", totalCurrentValue)
 	fmt.Printf("  总盈亏: $%.2f (%.2f%%)\n", totalProfit, totalProfitRate)

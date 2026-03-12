@@ -168,39 +168,38 @@
         let authHeader = '';
         let apiRefreshInterval = null;
         
-        
-        
         /* =========================
            登录检查
         ========================= */
         
         function checkAuth() {
-        
+            const username = localStorage.getItem('username');
             const phone = localStorage.getItem('phone');
             const password = localStorage.getItem('password');
         
-            if (!phone || !password) {
+            // 🔥 支持用户名或手机号登录
+            const loginName = username || phone;
+            
+            if (!loginName || !password) {
                 window.location.href = '/';
                 return false;
             }
         
-            authHeader = 'Basic ' + btoa(unescape(encodeURIComponent(phone + ':' + password)));
+            // 🔥 支持中文用户名
+            authHeader = 'Basic ' + btoa(unescape(encodeURIComponent(loginName + ':' + password)));
         
-            document.getElementById('userPhone').textContent = phone;
+            document.getElementById('userPhone').textContent = loginName;
         
             return true;
         }
-        
-        
         
         /* =========================
            判断用户类型
         ========================= */
         
         async function checkUserType() {
-        
             try {
-        
+                // 🔥 先尝试API用户接口
                 const response = await fetch(`${API_URL}/dashboard/api`, {
                     headers: { 'Authorization': authHeader }
                 });
@@ -212,247 +211,576 @@
         
                 const data = await response.json();
         
-                if (data && data.accounts) {
+                // 🔥 修复：检查 has_api_keys 而不是 accounts
+                if (data && typeof data.has_api_keys !== 'undefined') {
                     renderAPIDashboard(data);
                 } else {
                     loadNormalDashboard();
                 }
         
             } catch (err) {
-        
                 console.error('检查用户类型失败:', err);
                 loadNormalDashboard();
-        
             }
         }
-        
-        
         
         /* =========================
            普通用户 Dashboard
         ========================= */
         
         function loadNormalDashboard() {
-        
             loadSummary();
             loadRecharges();
-        
         }
-        
-        
         
         /* =========================
            API 用户 Dashboard
         ========================= */
         
         function renderAPIDashboard(data) {
-        
             console.log("API Dashboard 数据:", data);
         
-            loadSummary();
-            loadRecharges();
+            // 🔥 如果没有设置API密钥，显示设置表单
+            if (!data.has_api_keys) {
+                showAPIKeySetupForm();
+                return;
+            }
         
+            // 🔥 隐藏充值记录section
+            const rechargesSection = document.querySelector('.section:has(#rechargesBody)');
+            if (rechargesSection) {
+                rechargesSection.style.display = 'none';
+            }
+        
+            // 🔥 更新总览卡片
+            const summary = data.summary || {};
+            const initialBalance = summary.total_recharge || data.initial_balance || 0;
+            const currentBalance = summary.current_value || data.current_balance || 0;
+            const totalProfit = summary.total_profit || data.total_profit || 0;
+            const profitRate = summary.total_profit_rate || data.profit_rate || 0;
+        
+            // 第一张卡片：初始本金 + 修改按钮
+            document.querySelector('.stat-card:nth-child(1) h3').textContent = '初始本金';
+            document.querySelector('.stat-card:nth-child(1) .value').innerHTML = `
+                $${initialBalance.toFixed(2)}
+                <button class="btn" onclick="showEditInitialBalanceModal(${initialBalance})" 
+                        style="margin-left: 10px; font-size: 12px; padding: 4px 8px;">
+                    修改
+                </button>
+            `;
+        
+            // 第二张卡片：当前保证金余额
+            document.querySelector('.stat-card:nth-child(2) h3').textContent = '当前保证金余额';
+            document.getElementById('currentValue').textContent = '$' + currentBalance.toFixed(2);
+        
+            // 第三张卡片：总盈亏
+            const profitColor = totalProfit >= 0 ? '#10b981' : '#ef4444';
+            const profitSign = totalProfit >= 0 ? '+' : '';
+            const profitEl = document.getElementById('totalProfit');
+            profitEl.textContent = `${profitSign}$${totalProfit.toFixed(2)}`;
+            profitEl.style.color = profitColor;
+        
+            // 第四张卡片：盈亏率
+            const rateEl = document.getElementById('profitRate');
+            rateEl.textContent = `${profitSign}${profitRate.toFixed(2)}%`;
+            rateEl.style.color = profitColor;
+        
+            // 🔥 更新收益率分析
+            updateRateCards(summary);
+        
+            // 🔥 创建交易信息区域
             createAPITradingSection(data);
         
-            startAPIAutoRefresh();
+            // 🔥 添加按钮
+            addAPIButtons();
         
+            // 🔥 启动自动刷新
+            startAPIAutoRefresh();
         }
         
+        /* =========================
+           显示API密钥设置表单
+        ========================= */
         
+        function showAPIKeySetupForm() {
+            const container = document.querySelector('.container');
+            container.innerHTML = `
+                <div class="section" style="max-width: 600px; margin: 40px auto;">
+                    <h2 style="text-align: center; margin-bottom: 30px;">🔑 设置API密钥</h2>
+                    <p style="color: #666; text-align: center; margin-bottom: 30px;">
+                        绑定您的交易所API，实时查看账户资产和交易数据
+                    </p>
+                    <form id="apiKeysForm">
+                        <div style="margin-bottom: 20px;">
+                            <label style="display: block; margin-bottom: 8px; font-weight: 600;">📊 API类型</label>
+                            <select id="apiType" required style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px;">
+                                <option value="">请选择交易所</option>
+                                <option value="Binance">Binance (币安)</option>
+                                <option value="OKX">OKX (欧易)</option>
+                            </select>
+                        </div>
+                        
+                        <div style="margin-bottom: 20px;">
+                            <label style="display: block; margin-bottom: 8px; font-weight: 600;">🔐 API Key</label>
+                            <input type="text" id="apiKey" required placeholder="请输入您的API Key"
+                                   style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px;">
+                        </div>
+                        
+                        <div style="margin-bottom: 20px;">
+                            <label style="display: block; margin-bottom: 8px; font-weight: 600;">🔑 API Secret</label>
+                            <input type="password" id="apiSecret" required placeholder="请输入您的API Secret"
+                                   style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px;">
+                            <small style="color: #999;">您的API密钥将被加密存储</small>
+                        </div>
+                        
+                        <div id="passphraseGroup" style="margin-bottom: 20px; display:none;">
+                            <label style="display: block; margin-bottom: 8px; font-weight: 600;">🔒 Passphrase (仅OKX需要)</label>
+                            <input type="password" id="apiPassphrase" placeholder="请输入Passphrase"
+                                   style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px;">
+                        </div>
+                        
+                        <div style="margin-bottom: 20px;">
+                            <label style="display: block; margin-bottom: 8px; font-weight: 600;">💰 初始余额 (USDT/USDC)</label>
+                            <input type="number" id="initialBalance" step="0.01" required 
+                                   placeholder="请输入您的初始充值金额"
+                                   style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px;">
+                            <small style="color: #999; display: block; margin-top: 5px;">
+                                💡 请输入您实际充值到交易所的总金额，用于计算盈亏
+                            </small>
+                        </div>
+                        
+                        <button type="submit" class="btn" style="width: 100%; margin-top: 20px;">
+                            💾 保存API密钥并开始使用
+                        </button>
+                    </form>
+                    
+                    <div class="info-box" style="margin-top: 30px;">
+                        <strong>📌 温馨提示</strong>
+                        <ul>
+                            <li>API密钥仅用于查询数据，不会进行任何交易操作</li>
+                            <li>请确保API权限仅开启"读取"权限，关闭"交易"和"提现"权限</li>
+                            <li>初始余额用于计算盈亏，可随时修改</li>
+                        </ul>
+                    </div>
+                </div>
+            `;
+        
+            // 绑定事件
+            document.getElementById('apiType').addEventListener('change', function() {
+                const passphraseGroup = document.getElementById('passphraseGroup');
+                const passphraseInput = document.getElementById('apiPassphrase');
+                if (this.value === 'OKX') {
+                    passphraseGroup.style.display = 'block';
+                    passphraseInput.required = true;
+                } else {
+                    passphraseGroup.style.display = 'none';
+                    passphraseInput.required = false;
+                }
+            });
+        
+            document.getElementById('apiKeysForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                
+                const apiType = document.getElementById('apiType').value;
+                const apiKey = document.getElementById('apiKey').value;
+                const apiSecret = document.getElementById('apiSecret').value;
+                const apiPassphrase = document.getElementById('apiPassphrase').value || '';
+                const initialBalance = parseFloat(document.getElementById('initialBalance').value);
+        
+                try {
+                    const response = await fetch(`${API_URL}/dashboard/api/keys`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': authHeader,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            api_type: apiType,
+                            api_key: apiKey,
+                            api_secret: apiSecret,
+                            api_passphrase: apiPassphrase,
+                            initial_balance: initialBalance
+                        })
+                    });
+        
+                    if (response.ok) {
+                        alert('✅ API密钥已保存！页面将刷新...');
+                        location.reload();
+                    } else {
+                        const data = await response.json();
+                        alert('❌ 保存失败: ' + (data.error || '未知错误'));
+                    }
+                } catch (error) {
+                    console.error('保存API密钥失败:', error);
+                    alert('❌ 网络错误，请稍后重试');
+                }
+            });
+        }
+        
+        /* =========================
+           修改初始余额
+        ========================= */
+        
+        function showEditInitialBalanceModal(currentBalance) {
+            const modal = document.createElement('div');
+            modal.className = 'modal active';
+            modal.innerHTML = `
+                <div class="modal-content" style="max-width: 400px;">
+                    <h3 style="margin-bottom: 20px;">修改初始余额</h3>
+                    <form id="editBalanceForm">
+                        <div style="margin-bottom: 20px;">
+                            <label style="display: block; margin-bottom: 8px; font-weight: 600;">当前初始余额</label>
+                            <input type="text" value="$${currentBalance.toFixed(2)}" disabled
+                                   style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px; background: #f5f5f5;">
+                        </div>
+                        <div style="margin-bottom: 20px;">
+                            <label style="display: block; margin-bottom: 8px; font-weight: 600;">新的初始余额</label>
+                            <input type="number" id="newBalance" step="0.01" required value="${currentBalance}"
+                                   style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px;">
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            <button type="submit" class="btn" style="flex: 1;">💾 保存</button>
+                            <button type="button" class="btn" onclick="this.closest('.modal').remove()" 
+                                    style="flex: 1; background: #999;">❌ 取消</button>
+                        </div>
+                    </form>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        
+            document.getElementById('editBalanceForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                
+                const newBalance = parseFloat(document.getElementById('newBalance').value);
+        
+                try {
+                    const response = await fetch(`${API_URL}/dashboard/api/initial-balance`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': authHeader,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ initial_balance: newBalance })
+                    });
+        
+                    if (response.ok) {
+                        alert('✅ 初始余额已更新！');
+                        modal.remove();
+                        location.reload();
+                    } else {
+                        const data = await response.json();
+                        alert('❌ 更新失败: ' + (data.error || '未知错误'));
+                    }
+                } catch (error) {
+                    console.error('更新失败:', error);
+                    alert('❌ 网络错误，请稍后重试');
+                }
+            });
+        
+            // 点击modal外部关闭
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.remove();
+                }
+            });
+        }
+        
+        /* =========================
+           添加API按钮
+        ========================= */
+        
+        function addAPIButtons() {
+            // 检查是否已添加
+            if (document.getElementById('apiButtons')) return;
+        
+            const container = document.querySelector('.container');
+            const buttonsDiv = document.createElement('div');
+            buttonsDiv.id = 'apiButtons';
+            buttonsDiv.style.cssText = 'text-align: center; margin: 20px 0; display: flex; gap: 15px; justify-content: center; flex-wrap: wrap;';
+            buttonsDiv.innerHTML = `
+                <button class="btn" onclick="refreshAPIData()">🔄 刷新数据</button>
+                <button class="btn" onclick="showAPISettingsModal()" style="background: #f59e0b;">⚙️ 设置API</button>
+            `;
+            container.appendChild(buttonsDiv);
+        }
+        
+        /* =========================
+           API设置弹窗
+        ========================= */
+        
+        function showAPISettingsModal() {
+            showAPIKeySetupForm();
+        }
+        
+        /* =========================
+           刷新API数据
+        ========================= */
+        
+        async function refreshAPIData() {
+            try {
+                const response = await fetch(`${API_URL}/dashboard/api`, {
+                    headers: { 'Authorization': authHeader }
+                });
+        
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('刷新成功');
+                    
+                    // 更新卡片数据
+                    const summary = data.summary || {};
+                    const currentBalance = summary.current_value || data.current_balance || 0;
+                    const totalProfit = summary.total_profit || data.total_profit || 0;
+                    const profitRate = summary.total_profit_rate || data.profit_rate || 0;
+        
+                    document.getElementById('currentValue').textContent = '$' + currentBalance.toFixed(2);
+                    
+                    const profitColor = totalProfit >= 0 ? '#10b981' : '#ef4444';
+                    const profitSign = totalProfit >= 0 ? '+' : '';
+                    
+                    const profitEl = document.getElementById('totalProfit');
+                    profitEl.textContent = `${profitSign}$${totalProfit.toFixed(2)}`;
+                    profitEl.style.color = profitColor;
+                    
+                    const rateEl = document.getElementById('profitRate');
+                    rateEl.textContent = `${profitSign}${profitRate.toFixed(2)}%`;
+                    rateEl.style.color = profitColor;
+        
+                    // 更新收益率分析
+                    updateRateCards(summary);
+        
+                    // 更新交易数据
+                    renderPositions(data.positions || []);
+                    renderOrders(data.orders || []);
+                    renderHistory(data.history_trades || []);
+                }
+            } catch (error) {
+                console.error('刷新失败:', error);
+            }
+        }
+        
+        /* =========================
+           更新收益率卡片
+        ========================= */
+        
+        function updateRateCards(summary) {
+            const monthlyRate = summary.monthly_rate || 0;
+            const quarterlyRate = summary.quarterly_rate || 0;
+            const annualRate = summary.annual_rate || 0;
+            const avgHoldDays = summary.avg_hold_days || 0;
+        
+            const monthlyEl = document.getElementById('monthlyRate');
+            const quarterlyEl = document.getElementById('quarterlyRate');
+            const annualEl = document.getElementById('annualRate');
+            const avgDaysEl = document.getElementById('avgHoldDays');
+        
+            if (monthlyEl) monthlyEl.textContent = `${monthlyRate >= 0 ? '+' : ''}${monthlyRate.toFixed(2)}%`;
+            if (quarterlyEl) quarterlyEl.textContent = `${quarterlyRate >= 0 ? '+' : ''}${quarterlyRate.toFixed(2)}%`;
+            if (annualEl) annualEl.textContent = `${annualRate >= 0 ? '+' : ''}${annualRate.toFixed(2)}%`;
+            if (avgDaysEl) avgDaysEl.textContent = `${avgHoldDays}天`;
+        }
         
         /* =========================
            创建 API 交易面板
         ========================= */
         
         function createAPITradingSection(data) {
-        
+            const positions = data?.positions || [];
+            const orders = data?.orders || [];
+            const historyTrades = data?.history_trades || [];
+            
             let section = document.getElementById("apiTradingSection");
         
             if (!section) {
-        
                 section = document.createElement("div");
                 section.id = "apiTradingSection";
                 section.className = "section";
         
                 section.innerHTML = `
-                    <h2>📊 API交易账户</h2>
+                    <h2>📊 API交易信息</h2>
         
-                    <div id="apiAccounts"></div>
-        
-                    <h3 style="margin-top:20px;">当前持仓</h3>
+                    <h3 style="margin-top:20px;">当前持仓 (${positions.length})</h3>
                     <div id="positionsTable"></div>
         
-                    <h3 style="margin-top:20px;">当前订单</h3>
+                    <h3 style="margin-top:20px;">当前委托 (${orders.length})</h3>
                     <div id="ordersTable"></div>
+                    
+                    <h3 style="margin-top:20px;">历史交易 (最近${historyTrades.length}笔)</h3>
+                    <div id="historyTable"></div>
                 `;
         
                 document.querySelector(".container").appendChild(section);
-        
             }
         
-            renderAccounts(data.accounts || []);
-            renderPositions(data.positions || []);
-            renderOrders(data.orders || []);
-        
+            renderPositions(positions);
+            renderOrders(orders);
+            renderHistory(historyTrades);
         }
-        
-        
-        
-        /* =========================
-           渲染账户余额
-        ========================= */
-        
-        function renderAccounts(accounts) {
-        
-            const el = document.getElementById("apiAccounts");
-        
-            if (!accounts || accounts.length === 0) {
-        
-                el.innerHTML = `<p style="color:#999">暂无账户</p>`;
-                return;
-        
-            }
-        
-            el.innerHTML = accounts.map(acc => `
-        
-                <div class="stat-card">
-                    <h3>${acc.account_type}</h3>
-                    <div class="value">$${acc.balance.toFixed(2)}</div>
-                </div>
-        
-            `).join('');
-        
-        }
-        
-        
         
         /* =========================
            持仓
         ========================= */
         
         function renderPositions(positions) {
-        
             const el = document.getElementById("positionsTable");
+            
+            if (!el) return;
         
             if (!positions || positions.length === 0) {
-        
-                el.innerHTML = `<p style="color:#999">暂无持仓</p>`;
+                el.innerHTML = `<p style="color:#999; padding:15px;">暂无持仓</p>`;
                 return;
-        
             }
         
             el.innerHTML = `
-        
-                <table class="desktop-table">
-        
-                <thead>
-                <tr>
-                    <th>交易对</th>
-                    <th>方向</th>
-                    <th>数量</th>
-                    <th>开仓价</th>
-                    <th>未实现盈亏</th>
-                </tr>
-                </thead>
-        
-                <tbody>
-        
-                ${positions.map(p => `
-        
-                <tr>
-                    <td>${p.symbol}</td>
-        
-                    <td>
-                        <span class="badge ${p.side === 'long' ? 'long' : 'short'}">
-                            ${p.side}
-                        </span>
-                    </td>
-        
-                    <td>${p.size}</td>
-        
-                    <td>${p.entry_price}</td>
-        
-                    <td style="color:${p.pnl >= 0 ? '#10b981' : '#ef4444'}">
-                        ${p.pnl}
-                    </td>
-        
-                </tr>
-        
-                `).join('')}
-        
-                </tbody>
-                </table>
-        
+                <div class="table-container">
+                    <table class="desktop-table">
+                        <thead>
+                            <tr>
+                                <th>交易对</th>
+                                <th>方向</th>
+                                <th>数量</th>
+                                <th>开仓价</th>
+                                <th>标记价</th>
+                                <th>未实现盈亏</th>
+                                <th>盈亏率</th>
+                                <th>杠杆</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${positions.map(p => `
+                                <tr>
+                                    <td>${p.symbol}</td>
+                                    <td>
+                                        <span class="badge ${p.side === 'LONG' ? 'long' : 'short'}">
+                                            ${p.side}
+                                        </span>
+                                    </td>
+                                    <td>${p.size}</td>
+                                    <td>$${p.entry_price.toFixed(2)}</td>
+                                    <td>$${p.mark_price.toFixed(2)}</td>
+                                    <td style="color:${p.unrealized_pnl >= 0 ? '#10b981' : '#ef4444'}">
+                                        ${p.unrealized_pnl >= 0 ? '+' : ''}$${p.unrealized_pnl.toFixed(2)}
+                                    </td>
+                                    <td style="color:${p.unrealized_pnl_rate >= 0 ? '#10b981' : '#ef4444'}">
+                                        ${p.unrealized_pnl_rate >= 0 ? '+' : ''}${(p.unrealized_pnl_rate * 100).toFixed(2)}%
+                                    </td>
+                                    <td>${p.leverage}x</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
             `;
-        
         }
-        
-        
         
         /* =========================
            当前订单
         ========================= */
         
         function renderOrders(orders) {
-        
             const el = document.getElementById("ordersTable");
+            
+            if (!el) return;
         
             if (!orders || orders.length === 0) {
-        
-                el.innerHTML = `<p style="color:#999">暂无订单</p>`;
+                el.innerHTML = `<p style="color:#999; padding:15px;">暂无委托</p>`;
                 return;
-        
             }
         
             el.innerHTML = `
-        
-                <table class="desktop-table">
-        
-                <thead>
-                <tr>
-                    <th>交易对</th>
-                    <th>方向</th>
-                    <th>价格</th>
-                    <th>数量</th>
-                </tr>
-                </thead>
-        
-                <tbody>
-        
-                ${orders.map(o => `
-        
-                <tr>
-        
-                    <td>${o.symbol}</td>
-                    <td>${o.side}</td>
-                    <td>${o.price}</td>
-                    <td>${o.size}</td>
-        
-                </tr>
-        
-                `).join('')}
-        
-                </tbody>
-                </table>
-        
+                <div class="table-container">
+                    <table class="desktop-table">
+                        <thead>
+                            <tr>
+                                <th>交易对</th>
+                                <th>方向</th>
+                                <th>类型</th>
+                                <th>价格</th>
+                                <th>数量</th>
+                                <th>时间</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${orders.map(o => `
+                                <tr>
+                                    <td>${o.symbol}</td>
+                                    <td>
+                                        <span class="badge ${o.side === 'BUY' ? 'long' : 'short'}">
+                                            ${o.side}
+                                        </span>
+                                    </td>
+                                    <td>${o.type || '-'}</td>
+                                    <td>$${o.price.toFixed(2)}</td>
+                                    <td>${o.quantity}</td>
+                                    <td>${o.time || '-'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
             `;
-        
         }
         
+        /* =========================
+           历史交易
+        ========================= */
         
+        function renderHistory(trades) {
+            const el = document.getElementById("historyTable");
+            
+            if (!el) return;
+        
+            if (!trades || trades.length === 0) {
+                el.innerHTML = `<p style="color:#999; padding:15px;">暂无历史交易</p>`;
+                return;
+            }
+        
+            el.innerHTML = `
+                <div class="table-container">
+                    <table class="desktop-table">
+                        <thead>
+                            <tr>
+                                <th>交易对</th>
+                                <th>方向</th>
+                                <th>开仓时间</th>
+                                <th>平仓时间</th>
+                                <th>数量</th>
+                                <th>已实现盈亏</th>
+                                <th>手续费</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${trades.map(t => `
+                                <tr>
+                                    <td>${t.symbol}</td>
+                                    <td>
+                                        <span class="badge ${t.side === 'BUY' ? 'long' : 'short'}">
+                                            ${t.side}
+                                        </span>
+                                    </td>
+                                    <td>${t.open_time}</td>
+                                    <td>${t.close_time}</td>
+                                    <td>${t.quantity.toFixed(4)}</td>
+                                    <td style="color:${t.realized_pnl >= 0 ? '#10b981' : '#ef4444'}">
+                                        ${t.realized_pnl >= 0 ? '+' : ''}$${t.realized_pnl.toFixed(2)}
+                                    </td>
+                                    <td>$${t.commission.toFixed(2)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
         
         /* =========================
            自动刷新 API
         ========================= */
         
         function startAPIAutoRefresh() {
-        
             if (apiRefreshInterval) clearInterval(apiRefreshInterval);
         
             apiRefreshInterval = setInterval(async () => {
-        
                 try {
-        
                     const response = await fetch(`${API_URL}/dashboard/api`, {
                         headers: { 'Authorization': authHeader }
                     });
@@ -461,30 +789,22 @@
         
                     const data = await response.json();
         
-                    renderAccounts(data.accounts || []);
                     renderPositions(data.positions || []);
                     renderOrders(data.orders || []);
+                    renderHistory(data.history_trades || []);
         
                 } catch (err) {
-        
                     console.error("API刷新失败:", err);
-        
                 }
-        
-            }, 15000);
-        
+            }, 60000);
         }
-        
-        
         
         /* =========================
            普通用户数据
         ========================= */
         
         async function loadSummary() {
-        
             try {
-        
                 const response = await fetch(`${API_URL}/dashboard/summary`, {
                     headers: { 'Authorization': authHeader }
                 });
@@ -496,30 +816,31 @@
                 document.getElementById('totalRecharge').textContent = '$' + data.total_recharge.toFixed(2);
                 document.getElementById('currentValue').textContent = '$' + data.current_value.toFixed(2);
         
-                document.getElementById('totalProfit').textContent =
-                    (data.total_profit >= 0 ? '+' : '') + '$' + data.total_profit.toFixed(2);
+                const profitColor = data.total_profit >= 0 ? '#10b981' : '#ef4444';
+                const profitSign = data.total_profit >= 0 ? '+' : '';
         
-                document.getElementById('profitRate').textContent =
-                    (data.total_profit_rate >= 0 ? '+' : '') + data.total_profit_rate.toFixed(2) + '%';
+                const profitEl = document.getElementById('totalProfit');
+                profitEl.textContent = `${profitSign}$${data.total_profit.toFixed(2)}`;
+                profitEl.style.color = profitColor;
+        
+                const rateEl = document.getElementById('profitRate');
+                rateEl.textContent = `${profitSign}${data.total_profit_rate.toFixed(2)}%`;
+                rateEl.style.color = profitColor;
+        
+                // 🔥 更新收益率分析
+                updateRateCards(data);
         
             } catch (err) {
-        
                 console.error("加载统计失败", err);
-        
             }
-        
         }
         
-        
-        
         async function loadRecharges() {
-        
             const tbody = document.getElementById("rechargesBody");
         
             if (!tbody) return;
         
             try {
-        
                 const response = await fetch(`${API_URL}/dashboard/recharges`, {
                     headers: { 'Authorization': authHeader }
                 });
@@ -530,53 +851,73 @@
         
                 console.log("充值记录原始数据:", data);
         
+                // 🔥 渲染充值记录
+                if (!data.recharges || data.recharges.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#999;">暂无充值记录</td></tr>';
+                    return;
+                }
+        
+                tbody.innerHTML = data.recharges.map(r => {
+                    const profitColor = r.current_profit >= 0 ? '#10b981' : '#ef4444';
+                    const profitSign = r.current_profit >= 0 ? '+' : '';
+                    
+                    return `
+                        <tr>
+                            <td>${r.recharge_at}</td>
+                            <td class="hide-mobile">$${r.amount.toFixed(2)}</td>
+                            <td class="hide-mobile">${r.currency}</td>
+                            <td class="hide-mobile">${r.account_type}</td>
+                            <td style="color:${profitColor}">
+                                ${profitSign}$${r.current_profit.toFixed(2)}
+                            </td>
+                            <td class="hide-mobile" style="color:${profitColor}">
+                                ${profitSign}${r.profit_rate.toFixed(2)}%
+                            </td>
+                            <td>
+                                <button class="btn" onclick="viewHistory(${r.id})" style="font-size:12px; padding:6px 12px;">
+                                    查看历史
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+        
             } catch (err) {
-        
                 console.error("加载充值记录失败", err);
-        
             }
-        
         }
         
-        
+        function viewHistory(rechargeId) {
+            // TODO: 实现查看历史功能
+            alert('查看充值ID ' + rechargeId + ' 的历史记录');
+        }
         
         /* =========================
            刷新按钮
         ========================= */
         
         function refresh() {
-        
             checkUserType();
-        
         }
-        
-        
         
         /* =========================
            退出
         ========================= */
         
         function logout() {
-        
             localStorage.clear();
             window.location.href = '/';
-        
         }
-        
-        
         
         /* =========================
            页面初始化
         ========================= */
         
         window.addEventListener('DOMContentLoaded', () => {
-        
             if (!checkAuth()) return;
-        
             checkUserType();
-        
         });
         
-        </script>
+        </script>S
 </body>
 </html>
