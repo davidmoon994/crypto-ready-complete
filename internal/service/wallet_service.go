@@ -1202,7 +1202,7 @@ func (ws *WalletService) getBinanceFuturesBalanceByAsset(account *model.AdminAcc
 	return 0, nil
 }
 
-// getOKXBalanceByAsset 获取OKX指定币种余额
+// getOKXBalanceByAsset 获取OKX指定币种总余额（含挂单占用）
 func (ws *WalletService) getOKXBalanceByAsset(account *model.AdminAccount, currency string) (float64, error) {
 	if account.APIKey == "" || account.APISecret == "" || account.Passphrase == "" {
 		return 0, fmt.Errorf("未配置OKX API")
@@ -1214,14 +1214,12 @@ func (ws *WalletService) getOKXBalanceByAsset(account *model.AdminAccount, curre
 	prehash := timestamp + method + requestPath
 
 	signature := ws.okxSign(prehash, account.APISecret)
-
 	url := "https://www.okx.com" + requestPath
 
 	req, err := http.NewRequest(method, url, nil)
 	if err != nil {
 		return 0, err
 	}
-
 	req.Header.Set("OK-ACCESS-KEY", account.APIKey)
 	req.Header.Set("OK-ACCESS-SIGN", signature)
 	req.Header.Set("OK-ACCESS-TIMESTAMP", timestamp)
@@ -1260,18 +1258,18 @@ func (ws *WalletService) getOKXBalanceByAsset(account *model.AdminAccount, curre
 	}
 
 	totalBalance := 0.0
-
-	// 🔥 只统计指定币种
 	if len(result.Data) > 0 {
 		for _, detail := range result.Data[0].Details {
 			if detail.Ccy == currency {
-				balance, _ := strconv.ParseFloat(detail.CashBal, 64)
-				totalBalance += balance
+				cash, _ := strconv.ParseFloat(detail.CashBal, 64)
+				avail, _ := strconv.ParseFloat(detail.AvailBal, 64)
+				frozen := cash - avail        // 挂单占用
+				totalBalance += cash + frozen // 总余额 = 可用 + 冻结
 			}
 		}
 	}
 
-	fmt.Printf("  ✓ OKX %s 余额: $%.2f\n", currency, totalBalance)
+	fmt.Printf("  ✓ OKX %s 总余额 (含挂单占用) = $%.2f\n", currency, totalBalance)
 	return totalBalance, nil
 }
 

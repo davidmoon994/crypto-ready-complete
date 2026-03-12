@@ -448,7 +448,7 @@ func (r *Repository) GetRechargeStatistics() (map[int]map[string]float64, error)
 	rows, err := r.db.Query(`
 		SELECT admin_account_id, currency, SUM(amount) as total
 		FROM recharges
-		WHERE is_active = 1 AND user_id > 0  -- 🔥 只统计普通用户
+		WHERE is_active = 1 AND shares > 0
 		GROUP BY admin_account_id, currency
 	`)
 	if err != nil {
@@ -971,10 +971,10 @@ func (r *Repository) UpdateUserInitialBalance(userID int, initialBalance float64
 }
 
 // GetTotalRechargeAmountByCurrency 获取某个账户某个币种的总充值金额（不包括系统充值）
+// GetTotalRechargeAmountByCurrency 获取某个账户某个币种的总充值金额
 func (r *Repository) GetTotalRechargeAmountByCurrency(adminAccountID int, currency string) (float64, error) {
 	var totalAmount float64
 
-	// 🔥 添加详细调试
 	fmt.Printf("🔍 [GetTotalRechargeAmountByCurrency] 输入参数: adminAccountID=%d, currency=%s\n", adminAccountID, currency)
 
 	query := `
@@ -983,7 +983,7 @@ func (r *Repository) GetTotalRechargeAmountByCurrency(adminAccountID int, curren
 		WHERE admin_account_id = ? 
 		  AND currency = ? 
 		  AND is_active = 1
-		  AND user_id > 0`
+		  AND shares > 0` //🔥 改为只统计有份额的记录
 
 	fmt.Printf("🔍 [GetTotalRechargeAmountByCurrency] 执行SQL: %s\n", query)
 	fmt.Printf("🔍 [GetTotalRechargeAmountByCurrency] SQL参数: [%d, %s]\n", adminAccountID, currency)
