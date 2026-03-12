@@ -846,56 +846,66 @@
         }
         
         async function loadRecharges() {
-            const tbody = document.getElementById("rechargesBody");
-        
-            if (!tbody) return;
-        
-            try {
-                const response = await fetch(`${API_URL}/dashboard/recharges`, {
-                    headers: { 'Authorization': authHeader }
-                });
-        
-                if (!response.ok) return;
-        
-                const data = await response.json();
-        
-                console.log("充值记录原始数据:", data);
-        
-                // 🔥 渲染充值记录
-                if (!data.recharges || data.recharges.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#999;">暂无充值记录</td></tr>';
-                    return;
-                }
-        
-                tbody.innerHTML = data.recharges.map(r => {
-                    const profitColor = r.current_profit >= 0 ? '#10b981' : '#ef4444';
-                    const profitSign = r.current_profit >= 0 ? '+' : '';
-                    
-                    return `
-                        <tr>
-                            <td>${r.recharge_at}</td>
-                            <td class="hide-mobile">$${r.amount.toFixed(2)}</td>
-                            <td class="hide-mobile">${r.currency}</td>
-                            <td class="hide-mobile">${r.account_type}</td>
-                            <td style="color:${profitColor}">
-                                ${profitSign}$${r.current_profit.toFixed(2)}
-                            </td>
-                            <td class="hide-mobile" style="color:${profitColor}">
-                                ${profitSign}${r.profit_rate.toFixed(2)}%
-                            </td>
-                            <td>
-                                <button class="btn" onclick="viewHistory(${r.id})" style="font-size:12px; padding:6px 12px;">
-                                    查看历史
-                                </button>
-                            </td>
-                        </tr>
-                    `;
-                }).join('');
-        
-            } catch (err) {
-                console.error("加载充值记录失败", err);
-            }
+    const tbody = document.getElementById("rechargesBody");
+
+    if (!tbody) return;
+
+    try {
+        const response = await fetch(`${API_URL}/dashboard/recharges`, {
+            headers: { 'Authorization': authHeader }
+        });
+
+        if (!response.ok) return;
+
+        const data = await response.json();
+
+        console.log("充值记录原始数据:", data);
+
+        if (!data.recharges || data.recharges.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#999;">暂无充值记录</td></tr>';
+            return;
         }
+
+        tbody.innerHTML = data.recharges.map(item => {
+            // 🔥 修复：数据在 item.recharge 里面
+            const r = item.recharge;
+            const amount = r.amount || 0;
+            const currency = r.currency || '';
+            const rechargeAt = r.recharge_at || '';
+            
+            // 🔥 修复：盈亏数据在外层
+            const currentProfit = item.current_profit || 0;
+            const profitRate = item.current_rate || 0;  // 注意：是 current_rate
+            const accountType = item.account_type || '';
+            
+            const profitColor = currentProfit >= 0 ? '#10b981' : '#ef4444';
+            const profitSign = currentProfit >= 0 ? '+' : '';
+            
+            return `
+                <tr>
+                    <td>${rechargeAt}</td>
+                    <td class="hide-mobile">$${amount.toFixed(2)}</td>
+                    <td class="hide-mobile">${currency}</td>
+                    <td class="hide-mobile">${accountType}</td>
+                    <td style="color:${profitColor}">
+                        ${profitSign}$${currentProfit.toFixed(2)}
+                    </td>
+                    <td class="hide-mobile" style="color:${profitColor}">
+                        ${profitSign}${profitRate.toFixed(2)}%
+                    </td>
+                    <td>
+                        <button class="btn" onclick="viewHistory(${r.id})" style="font-size:12px; padding:6px 12px;">
+                            查看历史
+                        </button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+    } catch (err) {
+        console.error("加载充值记录失败", err);
+    }
+}
         
         function viewHistory(rechargeId) {
             // TODO: 实现查看历史功能

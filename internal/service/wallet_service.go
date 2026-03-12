@@ -1202,7 +1202,7 @@ func (ws *WalletService) getBinanceFuturesBalanceByAsset(account *model.AdminAcc
 	return 0, nil
 }
 
-// getOKXBalanceByAsset 获取OKX指定币种总余额（含挂单占用）
+// getOKXBalanceByAsset 获取OKX指定币种余额
 func (ws *WalletService) getOKXBalanceByAsset(account *model.AdminAccount, currency string) (float64, error) {
 	if account.APIKey == "" || account.APISecret == "" || account.Passphrase == "" {
 		return 0, fmt.Errorf("未配置OKX API")
@@ -1242,9 +1242,11 @@ func (ws *WalletService) getOKXBalanceByAsset(account *model.AdminAccount, curre
 		Msg  string `json:"msg"`
 		Data []struct {
 			Details []struct {
-				Ccy      string `json:"ccy"`
-				CashBal  string `json:"cashBal"`
-				AvailBal string `json:"availBal"`
+				Ccy       string `json:"ccy"`
+				CashBal   string `json:"cashBal"`   // 现金余额（含冻结）
+				AvailBal  string `json:"availBal"`  // 可用余额
+				FrozenBal string `json:"frozenBal"` // 冻结余额
+				Eq        string `json:"eq"`        // 总权益
 			} `json:"details"`
 		} `json:"data"`
 	}
@@ -1261,16 +1263,25 @@ func (ws *WalletService) getOKXBalanceByAsset(account *model.AdminAccount, curre
 	if len(result.Data) > 0 {
 		for _, detail := range result.Data[0].Details {
 			if detail.Ccy == currency {
+				// 🔥 修复：直接使用 eq (总权益) 或 cashBal
+				// eq 包含了未实现盈亏，cashBal 是现金余额
+				eq, _ := strconv.ParseFloat(detail.Eq, 64)
 				cash, _ := strconv.ParseFloat(detail.CashBal, 64)
 				avail, _ := strconv.ParseFloat(detail.AvailBal, 64)
-				frozen := cash - avail        // 挂单占用
-				totalBalance += cash + frozen // 总余额 = 可用 + 冻结
+
+				// 🔥 使用总权益（包含未实现盈亏）
+				totalBalance = eq
+
+				fmt.Printf("  ✓ OKX %s: 总权益=$%.2f (现金=$%.2f, 可用=$%.2f)\n",
+					currency, eq, cash, avail)
+
+				return totalBalance, nil
 			}
 		}
 	}
 
-	fmt.Printf("  ✓ OKX %s 总余额 (含挂单占用) = $%.2f\n", currency, totalBalance)
-	return totalBalance, nil
+	fmt.Printf("  ⚠️  OKX %s: 未找到余额\n", currency)
+	return 0, nil
 }
 
 // getWalletBalanceByAsset 获取链上钱包指定币种余额
