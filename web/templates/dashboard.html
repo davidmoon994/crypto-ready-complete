@@ -199,29 +199,25 @@
         
         async function checkUserType() {
     try {
-        // 🔥 改进：先获取用户信息判断类型
         const apiResponse = await fetch(`${API_URL}/dashboard/api`, {
             headers: { 'Authorization': authHeader }
         });
 
-        // 🔥 如果返回401/403，说明不是API用户或未登录
-        if (apiResponse.status === 401 || apiResponse.status === 403) {
-            loadNormalDashboard();
-            return;
+        // 🔥 修复：500也视为非API用户
+        if (apiResponse.status === 500 || apiResponse.status === 404 || !apiResponse.ok) {
+            const data = await apiResponse.json().catch(() => ({}));
+            
+            // 如果错误信息是"非API用户"，则加载普通Dashboard
+            if (data.error === '非API用户' || apiResponse.status === 500) {
+                console.log('✓ 检测到普通用户');
+                loadNormalDashboard();
+                return;
+            }
         }
 
-        // 🔥 如果返回500，可能是API用户但有错误
-        if (apiResponse.status === 500) {
-            console.warn('API接口500错误，尝试普通用户接口');
-            loadNormalDashboard();
-            return;
-        }
-
-        // 🔥 如果返回200，检查数据
         if (apiResponse.ok) {
             const data = await apiResponse.json();
             
-            // 🔥 严格检查：必须有 has_api_keys 字段才是API用户
             if (data && data.hasOwnProperty('has_api_keys')) {
                 console.log('✓ 检测到API用户');
                 renderAPIDashboard(data);
@@ -229,8 +225,7 @@
             }
         }
 
-        // 🔥 默认加载普通用户
-        console.log('✓ 加载普通用户Dashboard');
+        // 默认
         loadNormalDashboard();
 
     } catch (err) {

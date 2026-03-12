@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"fmt"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -972,15 +973,24 @@ func (r *Repository) UpdateUserInitialBalance(userID int, initialBalance float64
 // GetTotalRechargeAmountByCurrency 获取某个账户某个币种的总充值金额（不包括系统充值）
 func (r *Repository) GetTotalRechargeAmountByCurrency(adminAccountID int, currency string) (float64, error) {
 	var totalAmount float64
-	err := r.db.QueryRow(`
+
+	// 🔥 添加详细调试
+	fmt.Printf("🔍 [GetTotalRechargeAmountByCurrency] 输入参数: adminAccountID=%d, currency=%s\n", adminAccountID, currency)
+
+	query := `
 		SELECT COALESCE(SUM(amount), 0)
 		FROM recharges
 		WHERE admin_account_id = ? 
 		  AND currency = ? 
 		  AND is_active = 1
-		  AND user_id > 0`, //🔥 关键：排除系统充值
-		adminAccountID, currency,
-	).Scan(&totalAmount)
+		  AND user_id > 0`
+
+	fmt.Printf("🔍 [GetTotalRechargeAmountByCurrency] 执行SQL: %s\n", query)
+	fmt.Printf("🔍 [GetTotalRechargeAmountByCurrency] SQL参数: [%d, %s]\n", adminAccountID, currency)
+
+	err := r.db.QueryRow(query, adminAccountID, currency).Scan(&totalAmount)
+
+	fmt.Printf("🔍 [GetTotalRechargeAmountByCurrency] 查询结果: totalAmount=%.2f, err=%v\n", totalAmount, err)
 
 	return totalAmount, err
 }

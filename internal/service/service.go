@@ -548,13 +548,23 @@ func (s *Service) GetDashboardSummary(userID int) (*model.DashboardSummary, erro
 			continue
 		}
 
+		// 🔥 1:1份额模式：获取总充值金额
+		fmt.Printf("🔍 [GetDashboardSummary] 调用GetTotalRechargeAmountByCurrency, adminAccountID=%d, currency=%s\n",
+			r.AdminAccountID, r.Currency)
+
 		totalRechargeAmount, err := s.repo.GetTotalRechargeAmountByCurrency(r.AdminAccountID, r.Currency)
+
+		fmt.Printf("🔍 [GetDashboardSummary] GetTotalRechargeAmountByCurrency返回: totalRechargeAmount=%.2f, err=%v\n",
+			totalRechargeAmount, err)
+
 		if err != nil || totalRechargeAmount <= 0 {
-			fmt.Printf("⚠️  充值ID %d: 无法获取总充值金额 (currency: %s)\n", r.ID, r.Currency)
+			fmt.Printf("⚠️  充值ID %d: 无法获取总充值金额 (currency: %s), err=%v, totalRechargeAmount=%.2f\n",
+				r.ID, r.Currency, err, totalRechargeAmount)
 			totalCurrentValue += r.Amount
 			continue
 		}
 
+		// 🔥 按币种获取余额
 		currentBalance, err := s.walletService.GetBalanceByAsset(adminAccount, r.Currency)
 		if err != nil {
 			fmt.Printf("⚠️  充值ID %d: 无法获取余额\n", r.ID)
@@ -562,9 +572,13 @@ func (s *Service) GetDashboardSummary(userID int) (*model.DashboardSummary, erro
 			continue
 		}
 
+		// 🔥 1:1份额模式：净值 = 当前余额 / 总充值金额
 		netValue := currentBalance / totalRechargeAmount
-		currentValue := r.Amount * netValue
+		currentValue := r.Amount * netValue // 用户当前价值 = 用户充值 × 净值
 		totalCurrentValue += currentValue
+
+		fmt.Printf("  [充值ID %d] 币种=%s, 用户充值=$%.2f, 总充值=$%.2f, 余额=$%.2f, 净值=$%.4f, 当前价值=$%.2f\n",
+			r.ID, r.Currency, r.Amount, totalRechargeAmount, currentBalance, netValue, currentValue)
 
 		holdDays := int(time.Since(r.RechargeAt).Hours() / 24)
 		if holdDays < 1 {
