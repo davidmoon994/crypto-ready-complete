@@ -453,7 +453,6 @@ func (s *Service) GetDashboardSummary(userID int) (*model.DashboardSummary, erro
 
 	// 🔥 API用户：使用自己的API密钥查询余额
 	if user.IsAPIUser {
-		// 检查是否已设置API密钥
 		if user.APIKey == "" || user.APISecret == "" {
 			return &model.DashboardSummary{
 				TotalRecharge:   0,
@@ -464,7 +463,6 @@ func (s *Service) GetDashboardSummary(userID int) (*model.DashboardSummary, erro
 			}, nil
 		}
 
-		// 使用API用户自己的密钥查询
 		userAccount := &model.AdminAccount{
 			AccountType: user.APIType,
 			APIKey:      user.APIKey,
@@ -472,8 +470,6 @@ func (s *Service) GetDashboardSummary(userID int) (*model.DashboardSummary, erro
 			Passphrase:  user.APIPassphrase,
 		}
 
-		// 🔥 修复1: 使用 GetBalanceByAsset 而不是 GetBalance
-		// Binance API用户查USDC，OKX API用户查USDT
 		var currency string
 		if user.APIType == "Binance" {
 			currency = "USDC"
@@ -494,31 +490,18 @@ func (s *Service) GetDashboardSummary(userID int) (*model.DashboardSummary, erro
 			profitRate = (totalProfit / user.InitialBalance) * 100
 		}
 
-		// 🔥 计算持有天数
 		holdDays := int(time.Since(user.CreatedAt).Hours() / 24)
 		if holdDays < 1 {
 			holdDays = 1
 		}
 
-		// 🔥 计算年化收益率
-		monthlyRate := 0.0
-		quarterlyRate := 0.0
-		annualRate := 0.0
-
+		monthlyRate, quarterlyRate, annualRate := 0.0, 0.0, 0.0
 		if holdDays > 0 && profitRate != 0 {
 			dailyRate := profitRate / float64(holdDays)
 			monthlyRate = dailyRate * 30
 			quarterlyRate = dailyRate * 90
 			annualRate = dailyRate * 365
 		}
-
-		fmt.Printf("\n[API用户Dashboard] 用户ID %d:\n", userID)
-		fmt.Printf("  API类型: %s\n", user.APIType)
-		fmt.Printf("  币种: %s\n", currency)
-		fmt.Printf("  初始余额: $%.2f\n", user.InitialBalance)
-		fmt.Printf("  当前余额: $%.2f\n", currentBalance)
-		fmt.Printf("  总盈亏: $%.2f (%.2f%%)\n", totalProfit, profitRate)
-		fmt.Printf("  年化收益率: %.2f%%\n", annualRate)
 
 		return &model.DashboardSummary{
 			TotalRecharge:   user.InitialBalance,
@@ -542,20 +525,22 @@ func (s *Service) GetDashboardSummary(userID int) (*model.DashboardSummary, erro
 
 	totalRecharge := 0.0
 	totalCurrentValue := 0.0
-	totalHoldDays := 0 // 🔥 修复2: 添加变量定义
-	activeCount := 0   // 🔥 修复3: 添加变量定义
+	totalHoldDays := 0
+	activeCount := 0
 	var firstRechargeTime time.Time
 
 	for _, r := range recharges {
-		totalRecharge += r.Amount
-		activeCount++ // 🔥 统计活跃充值数量
+		if !r.IsActive {
+			continue
+		}
 
-		// 记录第一笔充值时间
+		totalRecharge += r.Amount
+		activeCount++
+
 		if firstRechargeTime.IsZero() || r.CreatedAt.Before(firstRechargeTime) {
 			firstRechargeTime = r.CreatedAt
 		}
 
-		// 获取管理员账户信息
 		adminAccount, err := s.repo.GetAdminAccountByID(r.AdminAccountID)
 		if err != nil {
 			fmt.Printf("⚠️  充值ID %d: 无法获取管理员账户\n", r.ID)
@@ -563,7 +548,6 @@ func (s *Service) GetDashboardSummary(userID int) (*model.DashboardSummary, erro
 			continue
 		}
 
-		// 🔥 1:1份额模式：获取总充值金额（只统计用户充值，不包括系统）
 		totalRechargeAmount, err := s.repo.GetTotalRechargeAmountByCurrency(r.AdminAccountID, r.Currency)
 		if err != nil || totalRechargeAmount <= 0 {
 			fmt.Printf("⚠️  充值ID %d: 无法获取总充值金额 (currency: %s)\n", r.ID, r.Currency)
@@ -571,7 +555,6 @@ func (s *Service) GetDashboardSummary(userID int) (*model.DashboardSummary, erro
 			continue
 		}
 
-		// 🔥 按币种获取余额
 		currentBalance, err := s.walletService.GetBalanceByAsset(adminAccount, r.Currency)
 		if err != nil {
 			fmt.Printf("⚠️  充值ID %d: 无法获取余额\n", r.ID)
@@ -579,15 +562,10 @@ func (s *Service) GetDashboardSummary(userID int) (*model.DashboardSummary, erro
 			continue
 		}
 
-		// 🔥 1:1份额模式：净值 = 当前余额 / 总充值金额
 		netValue := currentBalance / totalRechargeAmount
-		currentValue := r.Amount * netValue // 用户当前价值 = 用户充值 × 净值
+		currentValue := r.Amount * netValue
 		totalCurrentValue += currentValue
 
-		fmt.Printf("  [充值ID %d] 币种=%s, 用户充值=$%.2f, 总充值=$%.2f, 余额=$%.2f, 净值=$%.4f, 当前价值=$%.2f\n",
-			r.ID, r.Currency, r.Amount, totalRechargeAmount, currentBalance, netValue, currentValue)
-
-		// 计算持有天数
 		holdDays := int(time.Since(r.RechargeAt).Hours() / 24)
 		if holdDays < 1 {
 			holdDays = 1
@@ -602,28 +580,17 @@ func (s *Service) GetDashboardSummary(userID int) (*model.DashboardSummary, erro
 	if totalRecharge > 0 {
 		totalProfitRate = (totalProfit / totalRecharge) * 100
 	}
-
 	if activeCount > 0 {
 		avgHoldDays = totalHoldDays / activeCount
 	}
 
-	// 计算年化收益率
-	monthlyRate := 0.0
-	quarterlyRate := 0.0
-	annualRate := 0.0
-
+	monthlyRate, quarterlyRate, annualRate := 0.0, 0.0, 0.0
 	if avgHoldDays > 0 && totalProfitRate != 0 {
 		dailyRate := totalProfitRate / float64(avgHoldDays)
 		monthlyRate = dailyRate * 30
 		quarterlyRate = dailyRate * 90
 		annualRate = dailyRate * 365
 	}
-
-	fmt.Printf("\n[普通用户Dashboard] 用户ID %d:\n", userID)
-	fmt.Printf("  总充值: $%.2f\n", totalRecharge)
-	fmt.Printf("  当前价值: $%.2f\n", totalCurrentValue)
-	fmt.Printf("  总盈亏: $%.2f (%.2f%%)\n", totalProfit, totalProfitRate)
-	fmt.Printf("  年化收益率: %.2f%%\n", annualRate)
 
 	return &model.DashboardSummary{
 		TotalRecharge:   totalRecharge,
