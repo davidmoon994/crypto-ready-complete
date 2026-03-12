@@ -217,6 +217,9 @@ type APIDashboardData struct {
 	Orders         []Order           `json:"orders"`
 	HistoryTrades  []HistoryTrade    `json:"history_trades"`
 	LastUpdateTime string            `json:"last_update_time"`
+	// 🔥 新增字段
+	USDCBalance float64
+	USDTBalance float64
 }
 
 // 持仓信息

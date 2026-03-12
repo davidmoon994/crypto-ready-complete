@@ -1106,7 +1106,7 @@ func (s *Service) GetRechargeStatistics() (*model.RechargeStatistics, error) {
 	}, nil
 }
 
-// GetAPIDashboardData 获取API用户Dashboard数据
+// GetAPIDashboardData 获取API用户Dashboard数据（同时返回USDC和USDT余额）
 func (s *Service) GetAPIDashboardData(userID int) (*model.APIDashboardData, error) {
 	user, err := s.repo.GetUserByID(userID)
 	if err != nil {
@@ -1127,7 +1127,6 @@ func (s *Service) GetAPIDashboardData(userID int) (*model.APIDashboardData, erro
 		}, nil
 	}
 
-	// 使用用户自己的API密钥查询
 	userAccount := &model.AdminAccount{
 		AccountType: user.APIType,
 		APIKey:      user.APIKey,
@@ -1135,63 +1134,66 @@ func (s *Service) GetAPIDashboardData(userID int) (*model.APIDashboardData, erro
 		Passphrase:  user.APIPassphrase,
 	}
 
-	// 🔥 修复：使用 GetBalanceByAsset 获取USDC余额（U本位合约）
-	// Binance U本位合约使用USDC，OKX使用USDT
-	var currency string
-	if user.APIType == "Binance" {
-		currency = "USDC" // Binance U本位合约用USDC
-	} else if user.APIType == "OKX" {
-		currency = "USDT" // OKX交易账户用USDT
-	} else {
+	// 🔥 支持同时获取 USDC 和 USDT
+	balances := make(map[string]float64)
+
+	switch user.APIType {
+	case "Binance":
+		balances["USDC"], err = s.walletService.GetBalanceByAsset(userAccount, "USDC")
+		if err != nil {
+			return nil, fmt.Errorf("获取USDC余额失败: %v", err)
+		}
+		balances["USDT"], err = s.walletService.GetBalanceByAsset(userAccount, "USDT")
+		if err != nil {
+			balances["USDT"] = 0 // Binance可能没有USDT
+		}
+	case "OKX":
+		balances["USDT"], err = s.walletService.GetBalanceByAsset(userAccount, "USDT")
+		if err != nil {
+			return nil, fmt.Errorf("获取USDT余额失败: %v", err)
+		}
+		balances["USDC"], err = s.walletService.GetBalanceByAsset(userAccount, "USDC")
+		if err != nil {
+			balances["USDC"] = 0 // OKX可能没有USDC
+		}
+	default:
 		return nil, errors.New("不支持的API类型")
 	}
 
-	currentBalance, err := s.walletService.GetBalanceByAsset(userAccount, currency)
-	if err != nil {
-		return nil, fmt.Errorf("获取%s余额失败: %v", currency, err)
-	}
+	fmt.Printf("[API用户 %d] USDC=$%.2f, USDT=$%.2f\n", userID, balances["USDC"], balances["USDT"])
 
-	fmt.Printf("[API用户 %d] API类型=%s, 币种=%s, 余额=$%.2f\n",
-		userID, user.APIType, currency, currentBalance)
-
-	// 计算盈亏
-	totalProfit := currentBalance - user.InitialBalance
+	totalBalance := balances["USDC"] + balances["USDT"]
+	totalProfit := totalBalance - user.InitialBalance
 	profitRate := 0.0
 	if user.InitialBalance > 0 {
 		profitRate = (totalProfit / user.InitialBalance) * 100
 	}
 
-	// 计算持有天数
 	holdDays := int(time.Since(user.CreatedAt).Hours() / 24)
 	if holdDays < 1 {
 		holdDays = 1
 	}
 
-	// 计算年化收益率
+	dailyRate := 0.0
 	monthlyRate := 0.0
 	quarterlyRate := 0.0
 	annualRate := 0.0
-
 	if holdDays > 0 && profitRate != 0 {
-		dailyRate := profitRate / float64(holdDays)
+		dailyRate = profitRate / float64(holdDays)
 		monthlyRate = dailyRate * 30
 		quarterlyRate = dailyRate * 90
 		annualRate = dailyRate * 365
 	}
 
-	// 获取持仓、委托、历史
 	positions, _ := s.walletService.GetPositions(userAccount, 20)
 	orders, _ := s.walletService.GetOrders(userAccount, 20)
 	historyTrades, _ := s.walletService.GetHistoryTrades(userAccount, 50)
-
-	fmt.Printf("[API用户 %d] 初始余额=$%.2f, 当前余额=$%.2f, 盈亏=$%.2f (%.2f%%), 年化=%.2f%%\n",
-		userID, user.InitialBalance, currentBalance, totalProfit, profitRate, annualRate)
 
 	return &model.APIDashboardData{
 		HasAPIKeys: true,
 		Summary: &model.DashboardSummary{
 			TotalRecharge:   user.InitialBalance,
-			CurrentValue:    currentBalance,
+			CurrentValue:    totalBalance,
 			TotalProfit:     totalProfit,
 			TotalProfitRate: profitRate,
 			MonthlyRate:     monthlyRate,
@@ -1200,7 +1202,9 @@ func (s *Service) GetAPIDashboardData(userID int) (*model.APIDashboardData, erro
 			AvgHoldDays:     holdDays,
 			LastUpdateTime:  time.Now().Format("2006-01-02 15:04:05"),
 		},
-		CurrentBalance: currentBalance,
+		CurrentBalance: totalBalance,
+		USDCBalance:    balances["USDC"],
+		USDTBalance:    balances["USDT"],
 		InitialBalance: user.InitialBalance,
 		TotalProfit:    totalProfit,
 		ProfitRate:     profitRate,
