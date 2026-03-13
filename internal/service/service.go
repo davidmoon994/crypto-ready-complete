@@ -434,7 +434,48 @@ func (s *Service) UpdateUserStatus(userID int, isActive bool) error {
 
 // GetAllUsers 获取所有用户（含盈亏统计）
 func (s *Service) GetAllUsers() ([]*model.UserSummary, error) {
-	return s.repo.GetAllUsers()
+	// 🔥 获取所有用户（包括普通用户和API用户）
+	users, err := s.repo.GetAllUsersBasic()
+	if err != nil {
+		return nil, err
+	}
+
+	var result []*model.UserSummary
+	for _, user := range users {
+		// 🔥 跳过管理员账户（id <= 3）
+		if user.ID <= 3 {
+			continue
+		}
+
+		// 🔥 实时计算每个用户的Dashboard数据
+		summary, err := s.GetDashboardSummary(user.ID)
+		if err != nil {
+			fmt.Printf("⚠️  获取用户%d统计失败: %v\n", user.ID, err)
+			// 返回空数据
+			result = append(result, &model.UserSummary{
+				UserID:        user.ID,
+				Phone:         user.Phone, // 🔥 修复
+				IsActive:      user.IsActive,
+				TotalRecharge: 0,
+				CurrentValue:  0,
+				TotalProfit:   0,
+				RechargeCount: 0,
+			})
+			continue
+		}
+
+		result = append(result, &model.UserSummary{
+			UserID:        user.ID,
+			Phone:         user.Phone, // 🔥 修复
+			IsActive:      user.IsActive,
+			TotalRecharge: summary.TotalRecharge,
+			CurrentValue:  summary.CurrentValue,
+			TotalProfit:   summary.TotalProfit,
+			RechargeCount: summary.RechargeCount,
+		})
+	}
+
+	return result, nil
 }
 
 // GetUserByID 获取用户详情
@@ -629,30 +670,53 @@ func (s *Service) GetUserRechargesWithProfit(userID int) ([]*model.RechargeWithP
 
 	var result []*model.RechargeWithProfit
 	for _, r := range recharges {
-		// 获取最新盈亏
-		latestProfit, _ := s.repo.GetLatestRechargeProfit(r.ID)
-
-		profit := 0.0
-		profitRate := 0.0
-		if latestProfit != nil {
-			profit = latestProfit.Profit
-			profitRate = latestProfit.ProfitRate
+		if !r.IsActive {
+			continue
 		}
 
-		// 获取账户类型
-		account, _ := s.repo.GetAdminAccountByID(r.AdminAccountID)
-		accountType := ""
-		if account != nil {
-			accountType = account.AccountType
+		// 🔥 实时计算盈亏
+		account, err := s.repo.GetAdminAccountByID(r.AdminAccountID)
+		if err != nil || account == nil {
+			fmt.Printf("⚠️  充值ID %d: 无法获取账户信息\n", r.ID)
+			continue
+		}
+
+		// 获取总充值金额（shares > 0）
+		totalRechargeAmount, err := s.repo.GetTotalRechargeAmountByCurrency(r.AdminAccountID, r.Currency)
+		if err != nil || totalRechargeAmount <= 0 {
+			fmt.Printf("⚠️  充值ID %d: 无法获取总充值金额\n", r.ID)
+			continue
+		}
+
+		// 获取当前余额
+		currentBalance, err := s.walletService.GetBalanceByAsset(account, r.Currency)
+		if err != nil {
+			fmt.Printf("⚠️  充值ID %d: 无法获取余额\n", r.ID)
+			continue
+		}
+
+		// 🔥 计算净值和当前价值
+		netValue := currentBalance / totalRechargeAmount
+		currentValue := r.Amount * netValue
+		currentProfit := currentValue - r.Amount
+		profitRate := 0.0
+		if r.Amount > 0 {
+			profitRate = (currentProfit / r.Amount) * 100
 		}
 
 		// 计算持有天数
 		daysHeld := int(time.Since(r.RechargeAt).Hours() / 24)
+		if daysHeld < 1 {
+			daysHeld = 1
+		}
+
+		fmt.Printf("  [充值记录] ID=%d, 金额=$%.2f, 净值=%.4f, 当前=$%.2f, 盈亏=$%.2f (%.2f%%)\n",
+			r.ID, r.Amount, netValue, currentValue, currentProfit, profitRate)
 
 		item := &model.RechargeWithProfit{
 			Recharge:      r,
-			AccountType:   accountType,
-			CurrentProfit: profit,
+			AccountType:   account.AccountType,
+			CurrentProfit: currentProfit,
 			CurrentRate:   profitRate,
 			DaysHeld:      daysHeld,
 		}

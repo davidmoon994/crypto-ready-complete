@@ -392,6 +392,39 @@ func (r *Repository) UpdateAdminAccountConfig(accountType, apiKey, apiSecret, wa
 	return err
 }
 
+// GetAllUsersBasic 获取所有用户的基本信息
+func (r *Repository) GetAllUsersBasic() ([]*model.User, error) {
+	rows, err := r.db.Query(`
+		SELECT id, phone, username, is_active, is_api_user, created_at
+		FROM users
+		WHERE id > 3
+		ORDER BY id
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []*model.User
+	for rows.Next() {
+		var user model.User
+		err := rows.Scan(
+			&user.ID,
+			&user.Phone,
+			&user.Username,
+			&user.IsActive,
+			&user.IsAPIUser,
+			&user.CreatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		users = append(users, &user)
+	}
+
+	return users, nil
+}
+
 func (r *Repository) UpdateAdminAccountBalance(id int, balance float64) error {
 	_, err := r.db.Exec(
 		"UPDATE admin_accounts SET current_balance=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
