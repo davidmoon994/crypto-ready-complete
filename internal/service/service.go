@@ -1088,7 +1088,7 @@ func (s *Service) SaveUserAPIKeys(userID int, apiType, apiKey, apiSecret, passph
 	return nil
 }
 
-// GetUserDetail 获取用户详情（含充值记录）
+// GetUserDetail 获取用户详情（含充值记录）- 实时计算
 func (s *Service) GetUserDetail(userID int) (*model.UserDetailResponse, error) {
 	user, err := s.repo.GetUserByID(userID)
 	if err != nil {
@@ -1098,6 +1098,12 @@ func (s *Service) GetUserDetail(userID int) (*model.UserDetailResponse, error) {
 		return nil, errors.New("用户不存在")
 	}
 
+	// 🔥 使用 GetDashboardSummary 实时计算总览数据
+	summary, err := s.GetDashboardSummary(userID)
+	if err != nil {
+		return nil, err
+	}
+
 	// 获取充值记录
 	recharges, err := s.repo.GetRechargesByUserID(userID)
 	if err != nil {
@@ -1105,8 +1111,6 @@ func (s *Service) GetUserDetail(userID int) (*model.UserDetailResponse, error) {
 	}
 
 	var rechargeDetails []*model.RechargeDetail
-	totalRecharge := 0.0
-	totalCurrentValue := 0.0
 
 	for _, r := range recharges {
 		// 获取账户类型
@@ -1116,21 +1120,27 @@ func (s *Service) GetUserDetail(userID int) (*model.UserDetailResponse, error) {
 			accountType = account.AccountType
 		}
 
-		// 获取最新盈亏
-		latestProfit, _ := s.repo.GetLatestRechargeProfit(r.ID)
+		// 🔥 实时计算盈亏
 		currentProfit := 0.0
 		currentRate := 0.0
 		currentValue := r.Amount
 
-		if latestProfit != nil {
-			currentProfit = latestProfit.Profit
-			currentRate = latestProfit.ProfitRate
-			currentValue = r.Amount * (1 + currentRate/100)
-		}
-
 		if r.IsActive {
-			totalRecharge += r.Amount
-			totalCurrentValue += currentValue
+			// 获取总充值金额（shares > 0）
+			totalRechargeAmount, err := s.repo.GetTotalRechargeAmountByCurrency(r.AdminAccountID, r.Currency)
+			if err == nil && totalRechargeAmount > 0 {
+				// 获取当前余额
+				currentBalance, err := s.walletService.GetBalanceByAsset(account, r.Currency)
+				if err == nil {
+					// 计算净值和当前价值
+					netValue := currentBalance / totalRechargeAmount
+					currentValue = r.Amount * netValue
+					currentProfit = currentValue - r.Amount
+					if r.Amount > 0 {
+						currentRate = (currentProfit / r.Amount) * 100
+					}
+				}
+			}
 		}
 
 		detail := &model.RechargeDetail{
@@ -1148,21 +1158,16 @@ func (s *Service) GetUserDetail(userID int) (*model.UserDetailResponse, error) {
 		rechargeDetails = append(rechargeDetails, detail)
 	}
 
-	totalProfit := totalCurrentValue - totalRecharge
-	profitRate := 0.0
-	if totalRecharge > 0 {
-		profitRate = (totalProfit / totalRecharge) * 100
-	}
-
+	// 🔥 使用实时计算的数据
 	return &model.UserDetailResponse{
 		UserID:        user.ID,
 		Phone:         user.Phone,
 		IsActive:      user.IsActive,
-		TotalRecharge: totalRecharge,
-		CurrentValue:  totalCurrentValue,
-		TotalProfit:   totalProfit,
-		ProfitRate:    profitRate,
-		RechargeCount: len(recharges),
+		TotalRecharge: summary.TotalRecharge,
+		CurrentValue:  summary.CurrentValue,
+		TotalProfit:   summary.TotalProfit,
+		ProfitRate:    summary.TotalProfitRate,
+		RechargeCount: summary.RechargeCount,
 		Recharges:     rechargeDetails,
 	}, nil
 }

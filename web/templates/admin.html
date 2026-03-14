@@ -964,36 +964,37 @@ async function deleteRecharge(rechargeId) {
 function showUserDetailModal(data) {
     const modal = document.getElementById('userDetailModal');
     document.getElementById('currentUserId').value = data.user_id;
-    document.getElementById('detailPhone').textContent = data.phone;
+    document.getElementById('detailPhone').textContent = data.phone || '未知';
     document.getElementById('detailStatus').textContent = data.is_active ? '活跃' : '已停用';
-    document.getElementById('detailTotalRecharge').textContent = '$' + data.total_recharge.toFixed(2);
-    document.getElementById('detailCurrentValue').textContent = '$' + data.current_value.toFixed(2);
-    document.getElementById('detailTotalProfit').textContent = (data.total_profit >= 0 ? '+' : '') + '$' + data.total_profit.toFixed(2);
-    document.getElementById('detailProfitRate').textContent = (data.profit_rate >= 0 ? '+' : '') + data.profit_rate.toFixed(2) + '%';
+    document.getElementById('detailTotalRecharge').textContent = '$' + (data.total_recharge || 0).toFixed(2);
+    document.getElementById('detailCurrentValue').textContent = '$' + (data.current_value || 0).toFixed(2);
+    
+    const totalProfit = data.total_profit || 0;
+    const profitRate = data.profit_rate || 0;
+    
+    document.getElementById('detailTotalProfit').textContent = (totalProfit >= 0 ? '+' : '') + '$' + totalProfit.toFixed(2);
+    document.getElementById('detailProfitRate').textContent = (profitRate >= 0 ? '+' : '') + profitRate.toFixed(2) + '%';
     
     const tbody = document.getElementById('rechargesBody');
-    tbody.innerHTML = data.recharges.map(r => `
-        <tr style="${r.is_active ? '' : 'opacity: 0.5; background: #f9f9f9;'}">
-            <td>${new Date(r.recharge_at).toLocaleDateString('zh-CN')}</td>
-            <td>$${r.amount.toFixed(2)}</td>
-            <td>${r.currency}</td>
-            <td>${r.account_type}</td>
-            <td style="color: ${r.current_profit >= 0 ? '#10b981' : '#ef4444'}">
-                ${r.current_profit >= 0 ? '+' : ''}$${r.current_profit.toFixed(2)}
-            </td>
-            <td style="color: ${r.current_rate >= 0 ? '#10b981' : '#ef4444'}">
-                ${r.current_rate >= 0 ? '+' : ''}${r.current_rate.toFixed(2)}%
-            </td>
-            <td>
-                ${r.is_active ? 
-                    `<button class="btn" style="font-size: 12px; padding: 3px 8px; background: #ef4444;" onclick="deleteRecharge(${r.id})">删除</button>` :
-                    '<span style="color: #999;">已删除</span>'
-                }
-            </td>
-        </tr>
-    `).join('');
     
-    modal.classList.add('active');
+    // 🔥 处理空充值记录
+    if (!data.recharges || data.recharges.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#999; padding:20px;">暂无充值记录</td></tr>';
+    } else {
+        tbody.innerHTML = data.recharges.map(r => `
+            <tr style="${r.is_active ? '' : 'opacity: 0.5; background: #f9f9f9;'}">
+                <td>${r.recharge_at}</td>
+                <td>$${r.amount.toFixed(2)}</td>
+                <td>${r.currency}</td>
+                <td>${r.account_type}</td>
+                <td>${(r.current_profit >= 0 ? '+' : '')}$${r.current_profit.toFixed(2)}</td>
+                <td>${(r.current_rate >= 0 ? '+' : '')}${r.current_rate.toFixed(2)}%</td>
+                <td>${r.is_active ? '活跃' : '已停用'}</td>
+            </tr>
+        `).join('');
+    }
+    
+    modal.style.display = 'block';
 }
 
 function closeUserDetailModal() {
