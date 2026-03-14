@@ -146,16 +146,27 @@ func (h *Handler) AdminCreateUser(c *gin.Context) {
 
 // AdminGetUsers 获取所有Dashboard用户
 func (h *Handler) AdminGetUsers(c *gin.Context) {
+	fmt.Println("📋 [AdminGetUsers] 开始获取用户列表")
+
 	users, err := h.service.GetAllUsers()
 	if err != nil {
+		fmt.Printf("❌ [AdminGetUsers] 获取用户失败: %v\n", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
+	fmt.Printf("✓ [AdminGetUsers] 获取到 %d 个用户\n", len(users))
+
 	var result []gin.H
 	for _, user := range users {
+		fmt.Printf("  处理用户 %d...\n", user.UserID)
+
 		// 🔥 从数据库查询是否是API用户
-		userDetail, _ := h.service.GetUserByID(user.UserID)
+		userDetail, err := h.service.GetUserByID(user.UserID)
+		if err != nil {
+			fmt.Printf("  ⚠️  获取用户%d详情失败: %v\n", user.UserID, err)
+		}
+
 		isAPIUser := false
 		if userDetail != nil {
 			isAPIUser = userDetail.IsAPIUser
@@ -165,7 +176,7 @@ func (h *Handler) AdminGetUsers(c *gin.Context) {
 			"user_id":        user.UserID,
 			"phone":          user.Phone,
 			"is_active":      user.IsActive,
-			"is_api_user":    isAPIUser, // 使用查询到的值
+			"is_api_user":    isAPIUser,
 			"total_recharge": user.TotalRecharge,
 			"current_value":  user.CurrentValue,
 			"total_profit":   user.TotalProfit,
@@ -173,6 +184,7 @@ func (h *Handler) AdminGetUsers(c *gin.Context) {
 		})
 	}
 
+	fmt.Printf("✓ [AdminGetUsers] 返回 %d 个用户数据\n", len(result))
 	c.JSON(http.StatusOK, gin.H{"users": result})
 }
 
