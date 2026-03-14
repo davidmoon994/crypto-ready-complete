@@ -553,22 +553,22 @@ func (s *Service) GetDashboardSummary(userID int) (*model.DashboardSummary, erro
 			holdDays = 1
 		}
 
-		// 🔥 使用相同的盈亏率计算逻辑
+		// 🔥 修正盈亏率计算逻辑
 		dailyRate := 0.0
 		monthlyRate := 0.0
 		quarterlyRate := 0.0
 		annualRate := 0.0
 
-		if holdDays > 0 && user.InitialBalance > 0 {
-			// 日盈亏率 = 总盈亏 / 总充值(初始余额) / 持有天数
-			dailyRate = (totalProfit / user.InitialBalance / float64(holdDays)) * 100
+		if holdDays > 0 {
+			// 日盈亏率 = 总盈亏率 / 持有天数
+			dailyRate = profitRate / float64(holdDays)
 			monthlyRate = dailyRate * 30
 			quarterlyRate = dailyRate * 90
 			annualRate = dailyRate * 365
 		}
 
-		fmt.Printf("[API用户 %d] 初始余额=$%.2f, 当前余额=$%.2f, 盈亏=$%.2f (%.2f%%), 年化=%.2f%%\n",
-			userID, user.InitialBalance, currentBalance, totalProfit, profitRate, annualRate)
+		fmt.Printf("[API用户 %d] 初始余额=$%.2f, 当前余额=$%.2f, 盈亏=$%.2f (%.2f%%), 日盈亏=%.4f%%, 年化=%.2f%%\n",
+			userID, user.InitialBalance, currentBalance, totalProfit, profitRate, dailyRate, annualRate)
 
 		return &model.DashboardSummary{
 			TotalRecharge:   user.InitialBalance,
@@ -663,17 +663,23 @@ func (s *Service) GetDashboardSummary(userID int) (*model.DashboardSummary, erro
 		avgHoldDays = totalHoldDays / activeCount
 	}
 
-	// 🔥 优化盈亏率计算逻辑
+	// 🔥 修正盈亏率计算逻辑
 	dailyRate := 0.0
 	monthlyRate := 0.0
 	quarterlyRate := 0.0
 	annualRate := 0.0
 
-	if avgHoldDays > 0 && totalRecharge > 0 {
-		// 日盈亏率 = 总盈亏 / 总充值 / 平均持有天数
-		dailyRate = (totalProfit / totalRecharge / float64(avgHoldDays)) * 100
+	if avgHoldDays > 0 {
+		// 日盈亏率 = 总盈亏率 / 平均持有天数
+		dailyRate = totalProfitRate / float64(avgHoldDays)
+
+		// 月盈亏率 = 日盈亏率 × 30天
 		monthlyRate = dailyRate * 30
+
+		// 季度盈亏率 = 日盈亏率 × 90天
 		quarterlyRate = dailyRate * 90
+
+		// 年盈亏率 = 日盈亏率 × 365天
 		annualRate = dailyRate * 365
 	}
 
@@ -686,7 +692,6 @@ func (s *Service) GetDashboardSummary(userID int) (*model.DashboardSummary, erro
 	fmt.Printf("  月盈亏率: %.2f%%\n", monthlyRate)
 	fmt.Printf("  季度盈亏率: %.2f%%\n", quarterlyRate)
 	fmt.Printf("  年盈亏率: %.2f%%\n", annualRate)
-
 	return &model.DashboardSummary{
 		TotalRecharge:   totalRecharge,
 		CurrentValue:    totalCurrentValue,

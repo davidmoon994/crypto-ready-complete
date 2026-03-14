@@ -1162,14 +1162,11 @@ func (ws *WalletService) getBinanceFuturesBalanceByAsset(account *model.AdminAcc
 		return 0, err
 	}
 
-	// 🔥 添加调试日志
-	fmt.Printf("[调试] Binance API响应状态: %d\n", resp.StatusCode)
-	fmt.Printf("[调试] 响应内容: %s\n", string(body))
-
 	var balances []struct {
 		Asset              string `json:"asset"`
 		Balance            string `json:"balance"`
-		CrossWalletBalance string `json:"crossWalletBalance"`
+		CrossWalletBalance string `json:"crossWalletBalance"` // 全仓钱包余额
+		CrossUnPnl         string `json:"crossUnPnl"`         // 未实现盈亏
 		AvailableBalance   string `json:"availableBalance"`
 	}
 
@@ -1185,20 +1182,24 @@ func (ws *WalletService) getBinanceFuturesBalanceByAsset(account *model.AdminAcc
 		return 0, err
 	}
 
-	// 🔥 添加调试日志
-	fmt.Printf("[调试] 查找币种: %s, 总共有 %d 个资产\n", currency, len(balances))
-
 	// 只统计指定币种（USDT或USDC）
 	for _, b := range balances {
-		fmt.Printf("[调试] 资产: %s, 余额: %s\n", b.Asset, b.Balance)
 		if b.Asset == currency {
-			balance, _ := strconv.ParseFloat(b.Balance, 64)
-			fmt.Printf("[调试] ✓ 找到 %s, 余额=$%.2f\n", currency, balance)
-			return balance, nil
+			// 🔥 修复：使用 crossWalletBalance + crossUnPnl
+			crossWallet, _ := strconv.ParseFloat(b.CrossWalletBalance, 64)
+			crossUnPnl, _ := strconv.ParseFloat(b.CrossUnPnl, 64)
+
+			// 总权益 = 全仓钱包余额 + 未实现盈亏
+			totalBalance := crossWallet + crossUnPnl
+
+			fmt.Printf("  ✓ Binance %s: 钱包余额=$%.2f, 未实现盈亏=$%.2f, 总权益=$%.2f\n",
+				currency, crossWallet, crossUnPnl, totalBalance)
+
+			return totalBalance, nil
 		}
 	}
 
-	fmt.Printf("[调试] ⚠️  未找到币种 %s\n", currency)
+	fmt.Printf("  ⚠️  未找到币种 %s\n", currency)
 	return 0, nil
 }
 
