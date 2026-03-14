@@ -395,7 +395,12 @@ func (r *Repository) UpdateAdminAccountConfig(accountType, apiKey, apiSecret, wa
 // GetAllUsersBasic 获取所有用户的基本信息
 func (r *Repository) GetAllUsersBasic() ([]*model.User, error) {
 	rows, err := r.db.Query(`
-		SELECT id, phone, username, is_active, is_api_user, created_at
+		SELECT id, 
+		       COALESCE(phone, '') as phone, 
+		       COALESCE(username, '') as username, 
+		       is_active, 
+		       is_api_user, 
+		       created_at
 		FROM users
 		WHERE id > 3
 		ORDER BY id
