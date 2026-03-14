@@ -436,7 +436,6 @@ func (s *Service) UpdateUserStatus(userID int, isActive bool) error {
 func (s *Service) GetAllUsers() ([]*model.UserSummary, error) {
 	fmt.Println("📋 [GetAllUsers] 开始获取用户基本信息")
 
-	// 🔥 获取所有用户（包括普通用户和API用户）
 	users, err := s.repo.GetAllUsersBasic()
 	if err != nil {
 		fmt.Printf("❌ [GetAllUsers] GetAllUsersBasic 失败: %v\n", err)
@@ -447,21 +446,28 @@ func (s *Service) GetAllUsers() ([]*model.UserSummary, error) {
 
 	var result []*model.UserSummary
 	for _, user := range users {
-		// 🔥 跳过管理员账户（id <= 3）
-		if user.ID <= 3 {
-			continue
+		// 🔥 删除这个跳过逻辑
+		// if user.ID <= 3 {
+		// 	continue
+		// }
+
+		displayName := user.Phone
+		if user.Username != "" {
+			displayName = user.Username
+		} else if user.Phone != "" {
+			displayName = user.Phone
+		} else {
+			displayName = fmt.Sprintf("用户%d", user.ID)
 		}
 
-		fmt.Printf("  计算用户 %d (%s) 的Dashboard数据...\n", user.ID, user.Phone)
+		fmt.Printf("  计算用户 %d (%s) 的Dashboard数据...\n", user.ID, displayName)
 
-		// 🔥 实时计算每个用户的Dashboard数据
 		summary, err := s.GetDashboardSummary(user.ID)
 		if err != nil {
 			fmt.Printf("  ⚠️  获取用户%d统计失败: %v\n", user.ID, err)
-			// 返回空数据
 			result = append(result, &model.UserSummary{
 				UserID:        user.ID,
-				Phone:         user.Phone,
+				Phone:         displayName,
 				IsActive:      user.IsActive,
 				TotalRecharge: 0,
 				CurrentValue:  0,
@@ -476,7 +482,7 @@ func (s *Service) GetAllUsers() ([]*model.UserSummary, error) {
 
 		result = append(result, &model.UserSummary{
 			UserID:        user.ID,
-			Phone:         user.Phone,
+			Phone:         displayName,
 			IsActive:      user.IsActive,
 			TotalRecharge: summary.TotalRecharge,
 			CurrentValue:  summary.CurrentValue,

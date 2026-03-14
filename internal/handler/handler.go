@@ -161,20 +161,33 @@ func (h *Handler) AdminGetUsers(c *gin.Context) {
 	for _, user := range users {
 		fmt.Printf("  处理用户 %d...\n", user.UserID)
 
-		// 🔥 从数据库查询是否是API用户
+		// 🔥 从数据库查询详情
 		userDetail, err := h.service.GetUserByID(user.UserID)
 		if err != nil {
 			fmt.Printf("  ⚠️  获取用户%d详情失败: %v\n", user.UserID, err)
 		}
 
 		isAPIUser := false
+		displayName := user.Phone // 默认显示手机号
+
 		if userDetail != nil {
 			isAPIUser = userDetail.IsAPIUser
+
+			// 🔥 API用户优先显示username，普通用户显示phone
+			if isAPIUser && userDetail.Username != "" {
+				displayName = userDetail.Username
+			} else if userDetail.Phone != "" {
+				displayName = userDetail.Phone
+			} else if userDetail.Username != "" {
+				displayName = userDetail.Username
+			} else {
+				displayName = "未命名"
+			}
 		}
 
 		result = append(result, gin.H{
 			"user_id":        user.UserID,
-			"phone":          user.Phone,
+			"phone":          displayName, // 🔥 使用 displayName
 			"is_active":      user.IsActive,
 			"is_api_user":    isAPIUser,
 			"total_recharge": user.TotalRecharge,
