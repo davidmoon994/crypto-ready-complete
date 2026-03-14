@@ -392,7 +392,7 @@ func (r *Repository) UpdateAdminAccountConfig(accountType, apiKey, apiSecret, wa
 	return err
 }
 
-// GetAllUsersBasic 获取所有普通用户和API用户的基本信息
+// GetAllUsersBasic 获取所有普通用户和API用户的基本信息（排除admin账户）
 func (r *Repository) GetAllUsersBasic() ([]*model.User, error) {
 	rows, err := r.db.Query(`
 		SELECT id, 
@@ -402,7 +402,7 @@ func (r *Repository) GetAllUsersBasic() ([]*model.User, error) {
 		       is_api_user, 
 		       created_at
 		FROM users
-		WHERE is_admin = 0
+		WHERE id > 1
 		ORDER BY is_api_user, id
 	`)
 	if err != nil {
