@@ -1333,3 +1333,317 @@ func (s *Service) GetAPIDashboardData(userID int) (*model.APIDashboardData, erro
 func (s *Service) UpdateAPIUserInitialBalance(userID int, initialBalance float64) error {
 	return s.repo.UpdateUserInitialBalance(userID, initialBalance)
 }
+
+// CheckAndRecordMilestones 检查并记录所有用户的里程碑
+func (s *Service) CheckAndRecordMilestones() error {
+	users, err := s.repo.GetAllUsersBasic()
+	if err != nil {
+		return err
+	}
+
+	for _, user := range users {
+		if user.IsAPIUser {
+			// 🔥 API用户：基于账户创建日期
+			s.checkAPIUserMilestones(user)
+		} else {
+			// 🔥 普通用户：基于充值日期
+			s.checkNormalUserMilestones(user)
+		}
+	}
+
+	return nil
+}
+
+// checkNormalUserMilestones 检查普通用户的里程碑（基于充值）
+func (s *Service) checkNormalUserMilestones(user *model.User) {
+	recharges, err := s.repo.GetRechargesByUserID(user.ID)
+	if err != nil {
+		return
+	}
+
+	for _, r := range recharges {
+		if !r.IsActive {
+			continue
+		}
+
+		daysHeld := int(time.Since(r.RechargeAt).Hours() / 24)
+
+		s.checkAndSaveMilestone(r, daysHeld, "monthly", 30)
+		s.checkAndSaveMilestone(r, daysHeld, "quarterly", 90)
+		s.checkAndSaveMilestone(r, daysHeld, "yearly", 365)
+	}
+}
+
+// checkAPIUserMilestones 检查API用户的里程碑（基于账户创建日期）
+func (s *Service) checkAPIUserMilestones(user *model.User) {
+	// 获取完整用户信息
+	fullUser, err := s.repo.GetUserByID(user.ID)
+	if err != nil || fullUser == nil {
+		return
+	}
+
+	if fullUser.InitialBalance <= 0 {
+		return
+	}
+
+	daysHeld := int(time.Since(fullUser.CreatedAt).Hours() / 24)
+
+	// 检查里程碑
+	s.checkAndSaveAPIUserMilestone(fullUser, daysHeld, "monthly", 30)
+	s.checkAndSaveAPIUserMilestone(fullUser, daysHeld, "quarterly", 90)
+	s.checkAndSaveAPIUserMilestone(fullUser, daysHeld, "yearly", 365)
+}
+
+// checkAndSaveAPIUserMilestone 检查并保存API用户里程碑
+func (s *Service) checkAndSaveAPIUserMilestone(user *model.User, daysHeld int, milestoneType string, requiredDays int) {
+	if daysHeld < requiredDays {
+		return
+	}
+
+	// 使用负数recharge_id来标识API用户（避免与普通充值冲突）
+	pseudoRechargeID := -user.ID
+
+	// 检查是否已记录
+	existing, _ := s.repo.GetMilestone(pseudoRechargeID, milestoneType)
+	if existing != nil {
+		return
+	}
+
+	// 获取当前余额
+	userAccount := &model.AdminAccount{
+		AccountType: user.APIType,
+		APIKey:      user.APIKey,
+		APISecret:   user.APISecret,
+		Passphrase:  user.APIPassphrase,
+	}
+
+	var currency string
+	if user.APIType == "Binance" {
+		currency = "USDC"
+	} else if user.APIType == "OKX" {
+		currency = "USDT"
+	} else {
+		return
+	}
+
+	currentBalance, err := s.walletService.GetBalanceByAsset(userAccount, currency)
+	if err != nil {
+		return
+	}
+
+	profit := currentBalance - user.InitialBalance
+	profitRate := 0.0
+	if user.InitialBalance > 0 {
+		profitRate = (profit / user.InitialBalance) * 100
+	}
+
+	netValue := currentBalance / user.InitialBalance
+
+	// 保存里程碑
+	err = s.repo.SaveMilestone(
+		pseudoRechargeID,
+		user.ID,
+		milestoneType,
+		daysHeld,
+		user.InitialBalance,
+		currentBalance,
+		profit,
+		profitRate,
+		netValue,
+	)
+
+	if err != nil {
+		fmt.Printf("⚠️  保存API用户里程碑失败 (用户ID %d, %s): %v\n", user.ID, milestoneType, err)
+	} else {
+		fmt.Printf("✓ API用户%d 达成%s里程碑 (持有%d天, 盈亏$%.2f)\n",
+			user.ID, milestoneType, daysHeld, profit)
+	}
+}
+
+// checkAndSaveMilestone 检查并保存单个里程碑
+func (s *Service) checkAndSaveMilestone(recharge *model.Recharge, daysHeld int, milestoneType string, requiredDays int) {
+	// 1. 检查是否达到天数要求
+	if daysHeld < requiredDays {
+		return
+	}
+
+	// 2. 检查是否已经记录过
+	existing, _ := s.repo.GetMilestone(recharge.ID, milestoneType)
+	if existing != nil {
+		return
+	}
+
+	// 3. 计算当前盈亏
+	account, err := s.repo.GetAdminAccountByID(recharge.AdminAccountID)
+	if err != nil || account == nil {
+		return
+	}
+
+	totalRechargeAmount, err := s.repo.GetTotalRechargeAmountByCurrency(recharge.AdminAccountID, recharge.Currency)
+	if err != nil || totalRechargeAmount <= 0 {
+		return
+	}
+
+	currentBalance, err := s.walletService.GetBalanceByAsset(account, recharge.Currency)
+	if err != nil {
+		return
+	}
+
+	netValue := currentBalance / totalRechargeAmount
+	currentValue := recharge.Amount * netValue
+	profit := currentValue - recharge.Amount
+	profitRate := 0.0
+	if recharge.Amount > 0 {
+		profitRate = (profit / recharge.Amount) * 100
+	}
+
+	// 4. 保存里程碑
+	err = s.repo.SaveMilestone(
+		recharge.ID,
+		recharge.UserID,
+		milestoneType,
+		daysHeld,
+		recharge.Amount,
+		currentValue,
+		profit,
+		profitRate,
+		netValue,
+	)
+
+	if err != nil {
+		fmt.Printf("⚠️  保存里程碑失败 (充值ID %d, %s): %v\n", recharge.ID, milestoneType, err)
+	} else {
+		fmt.Printf("✓ 充值ID %d 达成%s里程碑 (持有%d天, 盈亏$%.2f)\n",
+			recharge.ID, milestoneType, daysHeld, profit)
+	}
+}
+
+// GetHistoricalProfitFromMilestones 从里程碑获取历史实际盈亏
+func (s *Service) GetHistoricalProfitFromMilestones(userID int) (map[string]map[string]float64, error) {
+	recharges, err := s.repo.GetRechargesByUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	result := map[string]map[string]float64{
+		"monthly":   {"profit": 0, "rate": 0, "count": 0},
+		"quarterly": {"profit": 0, "rate": 0, "count": 0},
+		"yearly":    {"profit": 0, "rate": 0, "count": 0},
+	}
+
+	for _, r := range recharges {
+		if !r.IsActive {
+			continue
+		}
+
+		// 查询各个里程碑
+		for _, milestoneType := range []string{"monthly", "quarterly", "yearly"} {
+			milestone, err := s.repo.GetMilestone(r.ID, milestoneType)
+			if err != nil {
+				continue
+			}
+
+			profit := milestone["profit"].(float64)
+			profitRate := milestone["profit_rate"].(float64)
+
+			result[milestoneType]["profit"] += profit
+			result[milestoneType]["rate"] += profitRate
+			result[milestoneType]["count"]++
+		}
+	}
+
+	// 计算平均盈亏率
+	for _, milestoneType := range []string{"monthly", "quarterly", "yearly"} {
+		count := result[milestoneType]["count"]
+		if count > 0 {
+			result[milestoneType]["rate"] = result[milestoneType]["rate"] / count
+		}
+	}
+
+	return result, nil
+}
+
+// WithdrawRecharge 撤资
+func (s *Service) WithdrawRecharge(rechargeID, userID int) error {
+	// 1. 验证权限
+	recharge, err := s.repo.GetRechargeByID(rechargeID)
+	if err != nil {
+		return err
+	}
+	if recharge == nil {
+		return errors.New("充值记录不存在")
+	}
+	if recharge.UserID != userID {
+		return errors.New("无权操作此充值记录")
+	}
+	if !recharge.IsActive {
+		return errors.New("该充值已停用")
+	}
+
+	// 2. 计算最终盈亏
+	account, err := s.repo.GetAdminAccountByID(recharge.AdminAccountID)
+	if err != nil || account == nil {
+		return errors.New("无法获取账户信息")
+	}
+
+	totalRechargeAmount, err := s.repo.GetTotalRechargeAmountByCurrency(recharge.AdminAccountID, recharge.Currency)
+	if err != nil || totalRechargeAmount <= 0 {
+		return errors.New("无法获取总充值金额")
+	}
+
+	currentBalance, err := s.walletService.GetBalanceByAsset(account, recharge.Currency)
+	if err != nil {
+		return errors.New("无法获取余额")
+	}
+
+	netValue := currentBalance / totalRechargeAmount
+	withdrawnAmount := recharge.Amount * netValue
+	finalProfit := withdrawnAmount - recharge.Amount
+	finalProfitRate := 0.0
+	if recharge.Amount > 0 {
+		finalProfitRate = (finalProfit / recharge.Amount) * 100
+	}
+
+	daysHeld := int(time.Since(recharge.RechargeAt).Hours() / 24)
+
+	// 3. 保存撤资里程碑
+	err = s.repo.SaveMilestone(
+		recharge.ID,
+		recharge.UserID,
+		"withdrawal",
+		daysHeld,
+		recharge.Amount,
+		withdrawnAmount,
+		finalProfit,
+		finalProfitRate,
+		netValue,
+	)
+	if err != nil {
+		return err
+	}
+
+	// 4. 记录撤资并停用充值
+	err = s.repo.RecordWithdrawal(
+		recharge.ID,
+		userID,
+		recharge.Amount,
+		withdrawnAmount,
+		finalProfit,
+		finalProfitRate,
+		daysHeld,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("✓ 用户%d 撤资成功: 充值$%.2f, 提取$%.2f, 盈亏$%.2f (%.2f%%), 持有%d天\n",
+		userID, recharge.Amount, withdrawnAmount, finalProfit, finalProfitRate, daysHeld)
+
+	return nil
+}
+
+// GetWithdrawals 获取用户的撤资记录
+func (s *Service) GetWithdrawals(userID int) ([]*model.Withdrawal, error) {
+	return s.repo.GetWithdrawals(userID)
+}

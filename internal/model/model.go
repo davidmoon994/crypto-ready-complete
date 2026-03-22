@@ -260,3 +260,17 @@ type HistoryTrade struct {
 	RealizedPnl float64 `json:"realized_pnl"` // 已实现盈亏
 	Commission  float64 `json:"commission"`   // 手续费
 }
+
+// Withdrawal 撤资记录
+type Withdrawal struct {
+	ID              int       `json:"id"`
+	RechargeID      int       `json:"recharge_id"`
+	OriginalAmount  float64   `json:"original_amount"`
+	WithdrawnAmount float64   `json:"withdrawn_amount"`
+	FinalProfit     float64   `json:"final_profit"`
+	FinalProfitRate float64   `json:"final_profit_rate"`
+	DaysHeld        int       `json:"days_held"`
+	WithdrawnAt     time.Time `json:"withdrawn_at"`
+	Currency        string    `json:"currency"`
+	RechargeAt      time.Time `json:"recharge_at"`
+}

@@ -139,6 +139,7 @@ func main() {
 			auth.GET("/dashboard/api", h.GetAPIDashboard)   // ← 新增
 			auth.POST("/dashboard/api/keys", h.SaveAPIKeys) // 保存API密钥
 			auth.POST("/dashboard/api/initial-balance", h.UpdateAPIInitialBalance)
+
 			// 管理员接口
 			admin := auth.Group("", h.AdminMiddleware())
 			{
@@ -162,6 +163,9 @@ func main() {
 
 				// 系统管理
 				admin.POST("/admin/manual-check", h.AdminManualCheck)
+
+				// ✅ 撤资（仅Admin可用）
+				admin.POST("/admin/withdraw", h.AdminWithdrawRecharge)
 			}
 		}
 	}

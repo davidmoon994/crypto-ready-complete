@@ -585,3 +585,47 @@ func (h *Handler) UpdateAPIInitialBalance(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "初始余额已更新"})
 }
+
+// AdminWithdrawRecharge Admin帮用户撤资
+func (h *Handler) AdminWithdrawRecharge(c *gin.Context) {
+	var req struct {
+		RechargeID int `json:"recharge_id" binding:"required"`
+		UserID     int `json:"user_id" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数错误"})
+		return
+	}
+
+	err := h.service.WithdrawRecharge(req.RechargeID, req.UserID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "撤资成功"})
+}
+
+// GetWithdrawals 获取撤资记录
+func (h *Handler) GetWithdrawals(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
+		return
+	}
+
+	uid, ok := userID.(int)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "用户ID类型错误"})
+		return
+	}
+
+	withdrawals, err := h.service.GetWithdrawals(uid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"withdrawals": withdrawals})
+}

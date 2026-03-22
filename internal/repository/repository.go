@@ -1031,3 +1031,120 @@ func (r *Repository) GetTotalRechargeAmountByCurrency(adminAccountID int, curren
 
 	return totalAmount, err
 }
+
+// SaveMilestone 保存充值里程碑快照
+func (r *Repository) SaveMilestone(rechargeID, userID int, milestoneType string, daysHeld int, amount, currentValue, profit, profitRate, netValue float64) error {
+	milestoneDate := time.Now().Format("2006-01-02")
+
+	_, err := r.db.Exec(`
+		INSERT OR REPLACE INTO recharge_milestones 
+		(recharge_id, user_id, milestone_type, milestone_date, days_held, amount, current_value, profit, profit_rate, net_value)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, rechargeID, userID, milestoneType, milestoneDate, daysHeld, amount, currentValue, profit, profitRate, netValue)
+
+	return err
+}
+
+// GetMilestone 获取充值的里程碑快照
+func (r *Repository) GetMilestone(rechargeID int, milestoneType string) (map[string]interface{}, error) {
+	var milestone map[string]interface{}
+	var daysHeld int
+	var amount, currentValue, profit, profitRate, netValue float64
+	var milestoneDate string
+
+	err := r.db.QueryRow(`
+		SELECT milestone_date, days_held, amount, current_value, profit, profit_rate, net_value
+		FROM recharge_milestones
+		WHERE recharge_id = ? AND milestone_type = ?
+	`, rechargeID, milestoneType).Scan(&milestoneDate, &daysHeld, &amount, &currentValue, &profit, &profitRate, &netValue)
+
+	if err != nil {
+		return nil, err
+	}
+
+	milestone = map[string]interface{}{
+		"milestone_date": milestoneDate,
+		"days_held":      daysHeld,
+		"amount":         amount,
+		"current_value":  currentValue,
+		"profit":         profit,
+		"profit_rate":    profitRate,
+		"net_value":      netValue,
+	}
+
+	return milestone, nil
+}
+
+// RecordWithdrawal 记录撤资
+func (r *Repository) RecordWithdrawal(rechargeID, userID int, originalAmount, withdrawnAmount, finalProfit, finalProfitRate float64, daysHeld int) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// 1. 记录撤资
+	_, err = tx.Exec(`
+		INSERT INTO withdrawals 
+		(recharge_id, user_id, original_amount, withdrawn_amount, final_profit, final_profit_rate, days_held)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, rechargeID, userID, originalAmount, withdrawnAmount, finalProfit, finalProfitRate, daysHeld)
+
+	if err != nil {
+		return err
+	}
+
+	// 2. 停用充值记录
+	_, err = tx.Exec(`
+		UPDATE recharges 
+		SET is_active = 0 
+		WHERE id = ?
+	`, rechargeID)
+
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+// GetWithdrawals 获取用户的撤资记录
+func (r *Repository) GetWithdrawals(userID int) ([]*model.Withdrawal, error) {
+	rows, err := r.db.Query(`
+		SELECT w.id, w.recharge_id, w.original_amount, w.withdrawn_amount, 
+		       w.final_profit, w.final_profit_rate, w.days_held, w.withdrawn_at,
+		       r.currency, r.recharge_at
+		FROM withdrawals w
+		LEFT JOIN recharges r ON w.recharge_id = r.id
+		WHERE w.user_id = ?
+		ORDER BY w.withdrawn_at DESC
+	`, userID)
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var withdrawals []*model.Withdrawal
+	for rows.Next() {
+		var w model.Withdrawal
+		err := rows.Scan(
+			&w.ID,
+			&w.RechargeID,
+			&w.OriginalAmount,
+			&w.WithdrawnAmount,
+			&w.FinalProfit,
+			&w.FinalProfitRate,
+			&w.DaysHeld,
+			&w.WithdrawnAt,
+			&w.Currency,
+			&w.RechargeAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		withdrawals = append(withdrawals, &w)
+	}
+
+	return withdrawals, nil
+}

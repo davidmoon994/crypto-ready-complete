@@ -689,6 +689,7 @@ table {
                         <th>充值到</th>
                         <th>当前盈亏</th>
                         <th>盈亏率</th>
+                        <th>状态</th>
                         <th>操作</th>
                     </tr>
                 </thead>
@@ -921,6 +922,44 @@ async function viewUserDetail(userId) {
     }
 }
 
+// Admin撤资确认
+async function confirmWithdraw(rechargeId, userId) {
+    if (!confirm('⚠️  确认要为用户撤资吗？\n\n撤资后：\n1. 按当前净值结算\n2. 充值记录将被停用\n3. 此操作不可撤销\n\n确定继续？')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_URL}/admin/withdraw`, {
+            method: 'POST',
+            headers: {
+                'Authorization': authHeader,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                recharge_id: rechargeId,
+                user_id: userId
+            })
+        });
+        
+        if (response.ok) {
+            const result = await response.json();
+            alert('✅ 撤资成功！\n\n' + (result.message || '操作已完成'));
+            
+            // 重新加载用户详情
+            viewUserDetail(userId);
+            
+            // 刷新用户列表
+            loadUsers();
+        } else {
+            const data = await response.json();
+            alert('❌ 撤资失败：' + (data.error || '未知错误'));
+        }
+    } catch (error) {
+        console.error('撤资失败:', error);
+        alert('❌ 网络错误，请稍后重试');
+    }
+}
+
 // 前端调用示例
 async function createAPIUser() {
     const response = await fetch(`${API_URL}/admin/users/api`, {
@@ -976,23 +1015,31 @@ function showUserDetailModal(data) {
     document.getElementById('detailProfitRate').textContent = (profitRate >= 0 ? '+' : '') + profitRate.toFixed(2) + '%';
     
     const tbody = document.getElementById('rechargesBody');
-    
-    // 🔥 处理空充值记录
-    if (!data.recharges || data.recharges.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#999; padding:20px;">暂无充值记录</td></tr>';
-    } else {
-        tbody.innerHTML = data.recharges.map(r => `
-            <tr style="${r.is_active ? '' : 'opacity: 0.5; background: #f9f9f9;'}">
-                <td>${r.recharge_at}</td>
-                <td>$${r.amount.toFixed(2)}</td>
-                <td>${r.currency}</td>
-                <td>${r.account_type}</td>
-                <td>${(r.current_profit >= 0 ? '+' : '')}$${r.current_profit.toFixed(2)}</td>
-                <td>${(r.current_rate >= 0 ? '+' : '')}${r.current_rate.toFixed(2)}%</td>
-                <td>${r.is_active ? '活跃' : '已停用'}</td>
-            </tr>
-        `).join('');
-    }
+
+// 🔥 处理空充值记录
+if (!data.recharges || data.recharges.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#999; padding:20px;">暂无充值记录</td></tr>';
+} else {
+    tbody.innerHTML = data.recharges.map(r => `
+        <tr style="${r.is_active ? '' : 'opacity: 0.5; background: #f9f9f9;'}">
+            <td>${r.recharge_at}</td>
+            <td>$${r.amount.toFixed(2)}</td>
+            <td>${r.currency}</td>
+            <td>${r.account_type}</td>
+            <td>${(r.current_profit >= 0 ? '+' : '')}$${r.current_profit.toFixed(2)}</td>
+            <td>${(r.current_rate >= 0 ? '+' : '')}${r.current_rate.toFixed(2)}%</td>
+            <td>${r.is_active ? '活跃' : '已停用'}</td>
+            <td>
+                ${r.is_active ? `
+                    <button class="btn" onclick="confirmWithdraw(${r.id}, ${data.user_id})" 
+                            style="font-size:12px; padding:4px 8px; background:#dc3545;">
+                        撤资
+                    </button>
+                ` : '<span style="color:#999;">已撤资</span>'}
+            </td>
+        </tr>
+    `).join('');
+}
     
     modal.classList.add('active');
 }
