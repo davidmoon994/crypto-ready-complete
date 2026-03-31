@@ -1075,36 +1075,116 @@ func (r *Repository) GetMilestone(rechargeID int, milestoneType string) (map[str
 	return milestone, nil
 }
 
-// RecordWithdrawal 记录撤资
+// RecordWithdrawal 记录全部撤资
 func (r *Repository) RecordWithdrawal(rechargeID, userID int, originalAmount, withdrawnAmount, finalProfit, finalProfitRate float64, daysHeld int) error {
 	tx, err := r.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-
+	
 	// 1. 记录撤资
 	_, err = tx.Exec(`
 		INSERT INTO withdrawals 
-		(recharge_id, user_id, original_amount, withdrawn_amount, final_profit, final_profit_rate, days_held)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		(recharge_id, user_id, original_amount, withdrawn_amount, final_profit, final_profit_rate, days_held, withdrawal_type, remaining_amount)
+		VALUES (?, ?, ?, ?, ?, ?, ?, 'full', 0)
 	`, rechargeID, userID, originalAmount, withdrawnAmount, finalProfit, finalProfitRate, daysHeld)
-
+	
 	if err != nil {
 		return err
 	}
-
+	
 	// 2. 停用充值记录
 	_, err = tx.Exec(`
 		UPDATE recharges 
 		SET is_active = 0 
 		WHERE id = ?
 	`, rechargeID)
-
+	
 	if err != nil {
 		return err
 	}
+	
+	return tx.Commit()
+}
 
+// RecordPartialWithdrawal 记录部分撤资
+func (r *Repository) RecordPartialWithdrawal(
+	originalRechargeID, userID int,
+	withdrawPrincipal, withdrawAmount, withdrawProfit, withdrawProfitRate float64,
+	remainingPrincipal, remainingValue float64,
+	daysHeld int,
+	originalRechargeAt time.Time,
+	adminAccountID int,
+	currency string,
+) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	
+	// 1. 停用原充值记录
+	_, err = tx.Exec(`
+		UPDATE recharges 
+		SET is_active = 0 
+		WHERE id = ?
+	`, originalRechargeID)
+	
+	if err != nil {
+		return err
+	}
+	
+	// 2. 创建新的充值记录（剩余部分，继续持有）
+	result, err := tx.Exec(`
+		INSERT INTO recharges 
+		(user_id, admin_account_id, amount, currency, recharge_at, base_balance, is_active)
+		VALUES (?, ?, ?, ?, ?, ?, 1)
+	`, userID, adminAccountID, remainingPrincipal, currency, originalRechargeAt, 0)
+	
+	if err != nil {
+		return err
+	}
+	
+	newRechargeID, _ := result.LastInsertId()
+	
+	// 3. 复制原充值的月度快照到新充值记录
+	_, err = tx.Exec(`
+		INSERT INTO recharge_monthly_snapshots 
+		(recharge_id, user_id, snapshot_date, period_number, days_in_period, amount, start_value, end_value, period_profit, period_profit_rate, net_value, created_at)
+		SELECT 
+			? as recharge_id,
+			user_id,
+			snapshot_date,
+			period_number,
+			days_in_period,
+			? as amount,
+			start_value * ?,
+			end_value * ?,
+			period_profit * ?,
+			period_profit_rate,
+			net_value,
+			created_at
+		FROM recharge_monthly_snapshots
+		WHERE recharge_id = ?
+	`, newRechargeID, remainingPrincipal, remainingPrincipal/withdrawPrincipal, remainingPrincipal/withdrawPrincipal, remainingPrincipal/withdrawPrincipal, originalRechargeID)
+	
+	if err != nil {
+		// 快照复制失败不影响撤资，只记录日志
+		fmt.Printf("⚠️  复制快照失败: %v\n", err)
+	}
+	
+	// 4. 记录撤资
+	_, err = tx.Exec(`
+		INSERT INTO withdrawals 
+		(recharge_id, user_id, original_amount, withdrawn_amount, final_profit, final_profit_rate, days_held, withdrawal_type, remaining_amount)
+		VALUES (?, ?, ?, ?, ?, ?, ?, 'partial', ?)
+	`, originalRechargeID, userID, withdrawPrincipal, withdrawAmount, withdrawProfit, withdrawProfitRate, daysHeld, remainingPrincipal)
+	
+	if err != nil {
+		return err
+	}
+	
 	return tx.Commit()
 }
 

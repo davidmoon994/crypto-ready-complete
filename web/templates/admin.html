@@ -922,9 +922,71 @@ async function viewUserDetail(userId) {
     }
 }
 
-// Admin撤资确认
+// Admin撤资确认（支持部分撤资）
 async function confirmWithdraw(rechargeId, userId) {
-    if (!confirm('⚠️  确认要为用户撤资吗？\n\n撤资后：\n1. 按当前净值结算\n2. 充值记录将被停用\n3. 此操作不可撤销\n\n确定继续？')) {
+    // 先获取充值信息
+    const response = await fetch(`${API_URL}/admin/users/${userId}`, {
+        headers: { 'Authorization': authHeader }
+    });
+    
+    if (!response.ok) {
+        alert('❌ 无法获取用户信息');
+        return;
+    }
+    
+    const userData = await response.json();
+    const recharge = userData.recharges.find(r => r.id === rechargeId);
+    
+    if (!recharge) {
+        alert('❌ 充值记录不存在');
+        return;
+    }
+    
+    const currentValue = recharge.amount * (1 + recharge.current_rate / 100);
+    
+    // 弹出输入框
+    const withdrawAmount = prompt(
+        `💰 部分撤资\n\n` +
+        `原始充值: $${recharge.amount.toFixed(2)}\n` +
+        `当前价值: $${currentValue.toFixed(2)}\n` +
+        `当前盈亏: $${recharge.current_profit.toFixed(2)} (${recharge.current_rate.toFixed(2)}%)\n\n` +
+        `请输入撤资金额（基于当前价值）：`,
+        currentValue.toFixed(2)
+    );
+    
+    if (!withdrawAmount) {
+        return; // 用户取消
+    }
+    
+    const amount = parseFloat(withdrawAmount);
+    
+    if (isNaN(amount) || amount <= 0) {
+        alert('❌ 请输入有效的金额');
+        return;
+    }
+    
+    if (amount > currentValue) {
+        alert(`❌ 撤资金额不能超过当前价值 $${currentValue.toFixed(2)}`);
+        return;
+    }
+    
+    const isFull = amount >= currentValue * 0.999; // 允许0.1%误差
+    const remainingValue = currentValue - amount;
+    
+    let confirmMsg = `⚠️  确认撤资信息：\n\n`;
+    confirmMsg += `撤资金额: $${amount.toFixed(2)}\n`;
+    
+    if (isFull) {
+        confirmMsg += `撤资类型: 全部撤资\n`;
+    } else {
+        confirmMsg += `撤资类型: 部分撤资\n`;
+        confirmMsg += `剩余价值: $${remainingValue.toFixed(2)}\n`;
+        confirmMsg += `\n剩余部分将继续持有并参与盈亏计算。\n`;
+    }
+    
+    confirmMsg += `\n此操作不可撤销，确定继续？`;
+    
+    if (!confirm(confirmMsg)) {
         return;
     }
     
@@ -937,7 +999,8 @@ async function confirmWithdraw(rechargeId, userId) {
             },
             body: JSON.stringify({
                 recharge_id: rechargeId,
-                user_id: userId
+                user_id: userId,
+                withdraw_amount: amount
             })
         });
         

@@ -1395,10 +1395,6 @@ func (s *Service) UpdateAPIUserInitialBalance(userID int, initialBalance float64
 	return s.repo.UpdateUserInitialBalance(userID, initialBalance)
 }
 
-// CheckAndRecordMilestones 兼容旧名称
-func (s *Service) CheckAndRecordMilestones() error {
-	return s.CheckAndRecordMonthlySnapshots()
-}
 
 // checkNormalUserMilestones 检查普通用户的里程碑（基于充值）
 func (s *Service) checkNormalUserMilestones(user *model.User) {
@@ -1412,16 +1408,122 @@ func (s *Service) checkNormalUserMilestones(user *model.User) {
 			continue
 		}
 
-		daysHeld := int(time.Since(r.RechargeAt).Hours() / 24)
-
-		s.checkAndSaveMilestone(r, daysHeld, "monthly", 30)
-		s.checkAndSaveMilestone(r, daysHeld, "quarterly", 90)
-		s.checkAndSaveMilestone(r, daysHeld, "yearly", 365)
 	}
 }
 
 
-
+// WithdrawRechargePartial 部分撤资
+func (s *Service) WithdrawRechargePartial(rechargeID, userID int, withdrawAmount float64) error {
+	// 1. 验证权限
+	recharge, err := s.repo.GetRechargeByID(rechargeID)
+	if err != nil {
+		return err
+	}
+	if recharge == nil {
+		return errors.New("充值记录不存在")
+	}
+	if recharge.UserID != userID {
+		return errors.New("无权操作此充值记录")
+	}
+	if !recharge.IsActive {
+		return errors.New("该充值已停用")
+	}
+	
+	// 2. 计算当前价值
+	account, err := s.repo.GetAdminAccountByID(recharge.AdminAccountID)
+	if err != nil || account == nil {
+		return errors.New("无法获取账户信息")
+	}
+	
+	totalRechargeAmount, err := s.repo.GetTotalRechargeAmountByCurrency(recharge.AdminAccountID, recharge.Currency)
+	if err != nil || totalRechargeAmount <= 0 {
+		return errors.New("无法获取总充值金额")
+	}
+	
+	currentBalance, err := s.walletService.GetBalanceByAsset(account, recharge.Currency)
+	if err != nil {
+		return errors.New("无法获取余额")
+	}
+	
+	netValue := currentBalance / totalRechargeAmount
+	currentValue := recharge.Amount * netValue
+	
+	// 3. 验证撤资金额
+	if withdrawAmount > currentValue {
+		return fmt.Errorf("撤资金额 $%.2f 超过当前价值 $%.2f", withdrawAmount, currentValue)
+	}
+	
+	daysHeld := int(time.Since(recharge.RechargeAt).Hours() / 24)
+	
+	// 4. 判断是全部撤资还是部分撤资
+	isFull := withdrawAmount >= currentValue*0.999 // 允许0.1%误差
+	
+	if isFull {
+		// 全部撤资
+		finalProfit := currentValue - recharge.Amount
+		finalProfitRate := 0.0
+		if recharge.Amount > 0 {
+			finalProfitRate = (finalProfit / recharge.Amount) * 100
+		}
+		
+		err = s.repo.RecordWithdrawal(
+			recharge.ID,
+			userID,
+			recharge.Amount,
+			currentValue,
+			finalProfit,
+			finalProfitRate,
+			daysHeld,
+		)
+		
+		if err != nil {
+			return err
+		}
+		
+		fmt.Printf("✓ 用户%d 全部撤资: 充值$%.2f, 提取$%.2f, 盈亏$%.2f (%.2f%%), 持有%d天\n",
+			userID, recharge.Amount, currentValue, finalProfit, finalProfitRate, daysHeld)
+		
+	} else {
+		// 部分撤资
+		remainingValue := currentValue - withdrawAmount
+		
+		// 计算撤资部分对应的原始本金
+		withdrawRatio := withdrawAmount / currentValue
+		withdrawPrincipal := recharge.Amount * withdrawRatio
+		remainingPrincipal := recharge.Amount - withdrawPrincipal
+		
+		withdrawProfit := withdrawAmount - withdrawPrincipal
+		withdrawProfitRate := 0.0
+		if withdrawPrincipal > 0 {
+			withdrawProfitRate = (withdrawProfit / withdrawPrincipal) * 100
+		}
+		
+		// 5. 记录部分撤资
+		err = s.repo.RecordPartialWithdrawal(
+			recharge.ID,
+			userID,
+			withdrawPrincipal,
+			withdrawAmount,
+			withdrawProfit,
+			withdrawProfitRate,
+			remainingPrincipal,
+			remainingValue,
+			daysHeld,
+			recharge.RechargeAt,
+			recharge.AdminAccountID,
+			recharge.Currency,
+		)
+		
+		if err != nil {
+			return err
+		}
+		
+		fmt.Printf("✓ 用户%d 部分撤资: 提取$%.2f (盈亏$%.2f), 剩余$%.2f继续持有, 持有%d天\n",
+			userID, withdrawAmount, withdrawProfit, remainingValue, daysHeld)
+	}
+	
+	return nil
+}
 
 
 // GetHistoricalProfitFromMilestones 从月度快照获取历史实际盈亏
