@@ -133,6 +133,13 @@ type DashboardSummary struct {
 	LastUpdateTime string  `json:"last_update_time"` // 添加这个
 	// 持有天数
 	AvgHoldDays int `json:"avg_hold_days"`
+	// 🔥 新增：实际历史收益
+	MonthlyActual       float64 `json:"monthly_actual"`
+	MonthlyActualRate   float64 `json:"monthly_actual_rate"`
+	QuarterlyActual     float64 `json:"quarterly_actual"`
+	QuarterlyActualRate float64 `json:"quarterly_actual_rate"`
+	YearlyActual        float64 `json:"yearly_actual"`
+	YearlyActualRate    float64 `json:"yearly_actual_rate"`
 }
 
 type RechargeWithProfit struct {

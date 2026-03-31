@@ -95,16 +95,19 @@
             <h2>📈 收益率分析</h2>
             <div class="stats-grid">
                 <div class="stat-card" style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%); color:white;">
-                    <h3 style="opacity:0.9;">月化率</h3><div class="value" id="monthlyRate">0%</div>
-                    <small style="opacity:0.8;font-size:12px;">基于平均持有天数</small>
+                    <h3 style="opacity:0.9;">月化收益</h3>
+                    <div class="value" id="monthlyRate">0%</div>
+                    <div style="font-size: 12px; opacity: 0.9; margin-top: 8px; padding: 5px 10px; background: rgba(255,255,255,0.2); border-radius: 5px;" id="monthlyActual">-</div>
                 </div>
                 <div class="stat-card" style="background:linear-gradient(135deg,#f093fb 0%,#f5576c 100%); color:white;">
-                    <h3 style="opacity:0.9;">季度化率</h3><div class="value" id="quarterlyRate">0%</div>
-                    <small style="opacity:0.8;font-size:12px;">90天预期收益</small>
+                    <h3 style="opacity:0.9;">季度化收益</h3>
+                    <div class="value" id="quarterlyRate">0%</div>
+                    <div style="font-size: 12px; opacity: 0.9; margin-top: 8px; padding: 5px 10px; background: rgba(255,255,255,0.2); border-radius: 5px;" id="quarterlyActual">-</div>
                 </div>
                 <div class="stat-card" style="background:linear-gradient(135deg,#4facfe 0%,#00f2fe 100%); color:white;">
-                    <h3 style="opacity:0.9;">年化率</h3><div class="value" id="annualRate">0%</div>
-                    <small style="opacity:0.8;font-size:12px;">365天预期收益</small>
+                    <h3 style="opacity:0.9;">年化收益</h3>
+                    <div class="value" id="annualRate">0%</div>
+                    <div style="font-size: 12px; opacity: 0.9; margin-top: 8px; padding: 5px 10px; background: rgba(255,255,255,0.2); border-radius: 5px;" id="yearlyActual">-</div>
                 </div>
                 <div class="stat-card">
                     <h3>平均持有</h3><div class="value" id="avgHoldDays">0天</div>
@@ -114,8 +117,8 @@
             <div class="info-box">
                 <strong>💡 说明：</strong>
                 <ul>
-                    <li>化率基于当前累计收益率和平均持有天数计算</li>
-                    <li>月化率 = 日化率 × 30，季度化率 = 日化率 × 90，年化率 = 日化率 × 365</li>
+                    <li><strong>预测收益率</strong>：基于当前日均收益率计算的预期收益（月化 = 日化率 × 30天）</li>
+                    <li><strong>实际收益</strong>：充值满30/90/365天后，显示该期间的真实盈亏金额和收益率</li>
                     <li>仅供参考，过往表现不代表未来收益</li>
                 </ul>
             </div>
@@ -573,21 +576,68 @@
         ========================= */
         
         function updateRateCards(summary) {
-            const monthlyRate = summary.monthly_rate || 0;
-            const quarterlyRate = summary.quarterly_rate || 0;
-            const annualRate = summary.annual_rate || 0;
-            const avgHoldDays = summary.avg_hold_days || 0;
-        
-            const monthlyEl = document.getElementById('monthlyRate');
-            const quarterlyEl = document.getElementById('quarterlyRate');
-            const annualEl = document.getElementById('annualRate');
-            const avgDaysEl = document.getElementById('avgHoldDays');
-        
-            if (monthlyEl) monthlyEl.textContent = `${monthlyRate >= 0 ? '+' : ''}${monthlyRate.toFixed(2)}%`;
-            if (quarterlyEl) quarterlyEl.textContent = `${quarterlyRate >= 0 ? '+' : ''}${quarterlyRate.toFixed(2)}%`;
-            if (annualEl) annualEl.textContent = `${annualRate >= 0 ? '+' : ''}${annualRate.toFixed(2)}%`;
-            if (avgDaysEl) avgDaysEl.textContent = `${avgHoldDays}天`;
+    const monthlyRate = summary.monthly_rate || 0;
+    const quarterlyRate = summary.quarterly_rate || 0;
+    const annualRate = summary.annual_rate || 0;
+    const avgHoldDays = summary.avg_hold_days || 0;
+    
+    // 🔥 实际历史数据
+    const monthlyActual = summary.monthly_actual || 0;
+    const monthlyActualRate = summary.monthly_actual_rate || 0;
+    const quarterlyActual = summary.quarterly_actual || 0;
+    const quarterlyActualRate = summary.quarterly_actual_rate || 0;
+    const yearlyActual = summary.yearly_actual || 0;
+    const yearlyActualRate = summary.yearly_actual_rate || 0;
+
+    const monthlyEl = document.getElementById('monthlyRate');
+    const quarterlyEl = document.getElementById('quarterlyRate');
+    const annualEl = document.getElementById('annualRate');
+    const avgDaysEl = document.getElementById('avgHoldDays');
+    
+    const monthlyActualEl = document.getElementById('monthlyActual');
+    const quarterlyActualEl = document.getElementById('quarterlyActual');
+    const yearlyActualEl = document.getElementById('yearlyActual');
+
+    // 预测收益率
+    if (monthlyEl) monthlyEl.textContent = `${monthlyRate >= 0 ? '+' : ''}${monthlyRate.toFixed(2)}% (预测)`;
+    if (quarterlyEl) quarterlyEl.textContent = `${quarterlyRate >= 0 ? '+' : ''}${quarterlyRate.toFixed(2)}% (预测)`;
+    if (annualEl) annualEl.textContent = `${annualRate >= 0 ? '+' : ''}${annualRate.toFixed(2)}% (预测)`;
+    if (avgDaysEl) avgDaysEl.textContent = `${avgHoldDays}天`;
+    
+    // 🔥 实际历史收益
+    if (monthlyActualEl) {
+        if (monthlyActualRate === 0 && monthlyActual === 0) {
+            monthlyActualEl.textContent = '实际: 暂无数据 (未满30天)';
+            monthlyActualEl.style.color = '#999';
+        } else {
+            const sign = monthlyActual >= 0 ? '+' : '';
+            monthlyActualEl.textContent = `实际: ${sign}$${monthlyActual.toFixed(2)} (${sign}${monthlyActualRate.toFixed(2)}%)`;
+            monthlyActualEl.style.color = monthlyActual >= 0 ? '#10b981' : '#ef4444';
         }
+    }
+    
+    if (quarterlyActualEl) {
+        if (quarterlyActualRate === 0 && quarterlyActual === 0) {
+            quarterlyActualEl.textContent = '实际: 暂无数据 (未满90天)';
+            quarterlyActualEl.style.color = '#999';
+        } else {
+            const sign = quarterlyActual >= 0 ? '+' : '';
+            quarterlyActualEl.textContent = `实际: ${sign}$${quarterlyActual.toFixed(2)} (${sign}${quarterlyActualRate.toFixed(2)}%)`;
+            quarterlyActualEl.style.color = quarterlyActual >= 0 ? '#10b981' : '#ef4444';
+        }
+    }
+    
+    if (yearlyActualEl) {
+        if (yearlyActualRate === 0 && yearlyActual === 0) {
+            yearlyActualEl.textContent = '实际: 暂无数据 (未满365天)';
+            yearlyActualEl.style.color = '#999';
+        } else {
+            const sign = yearlyActual >= 0 ? '+' : '';
+            yearlyActualEl.textContent = `实际: ${sign}$${yearlyActual.toFixed(2)} (${sign}${yearlyActualRate.toFixed(2)}%)`;
+            yearlyActualEl.style.color = yearlyActual >= 0 ? '#10b981' : '#ef4444';
+        }
+    }
+}
         
         /* =========================
            创建 API 交易面板

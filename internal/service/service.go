@@ -570,17 +570,47 @@ func (s *Service) GetDashboardSummary(userID int) (*model.DashboardSummary, erro
 		fmt.Printf("[API用户 %d] 初始余额=$%.2f, 当前余额=$%.2f, 盈亏=$%.2f (%.2f%%), 日盈亏=%.4f%%, 年化=%.2f%%\n",
 			userID, user.InitialBalance, currentBalance, totalProfit, profitRate, dailyRate, annualRate)
 
+		// 🔥 获取API用户的里程碑数据
+		milestones, _ := s.GetHistoricalProfitFromMilestones(userID)
+
+		monthlyActual := 0.0
+		monthlyActualRate := 0.0
+		quarterlyActual := 0.0
+		quarterlyActualRate := 0.0
+		yearlyActual := 0.0
+		yearlyActualRate := 0.0
+
+		if milestones != nil {
+			if monthly, ok := milestones["monthly"]; ok && monthly["count"] > 0 {
+				monthlyActual = monthly["profit"]
+				monthlyActualRate = monthly["rate"]
+			}
+			if quarterly, ok := milestones["quarterly"]; ok && quarterly["count"] > 0 {
+				quarterlyActual = quarterly["profit"]
+				quarterlyActualRate = quarterly["rate"]
+			}
+			if yearly, ok := milestones["yearly"]; ok && yearly["count"] > 0 {
+				yearlyActual = yearly["profit"]
+				yearlyActualRate = yearly["rate"]
+			}
+		}
 		return &model.DashboardSummary{
-			TotalRecharge:   user.InitialBalance,
-			CurrentValue:    currentBalance,
-			TotalProfit:     totalProfit,
-			TotalProfitRate: profitRate,
-			RechargeCount:   1,
-			MonthlyRate:     monthlyRate,
-			QuarterlyRate:   quarterlyRate,
-			AnnualRate:      annualRate,
-			AvgHoldDays:     holdDays,
-			LastUpdateTime:  time.Now().Format("2006-01-02 15:04:05"),
+			TotalRecharge:       user.InitialBalance,
+			CurrentValue:        currentBalance,
+			TotalProfit:         totalProfit,
+			TotalProfitRate:     profitRate,
+			RechargeCount:       1,
+			MonthlyRate:         monthlyRate,
+			QuarterlyRate:       quarterlyRate,
+			AnnualRate:          annualRate,
+			AvgHoldDays:         holdDays,
+			MonthlyActual:       monthlyActual,       // 🔥 新增
+			MonthlyActualRate:   monthlyActualRate,   // 🔥 新增
+			QuarterlyActual:     quarterlyActual,     // 🔥 新增
+			QuarterlyActualRate: quarterlyActualRate, // 🔥 新增
+			YearlyActual:        yearlyActual,        // 🔥 新增
+			YearlyActualRate:    yearlyActualRate,    // 🔥 新增
+			LastUpdateTime:      time.Now().Format("2006-01-02 15:04:05"),
 		}, nil
 	}
 
@@ -692,17 +722,48 @@ func (s *Service) GetDashboardSummary(userID int) (*model.DashboardSummary, erro
 	fmt.Printf("  月盈亏率: %.2f%%\n", monthlyRate)
 	fmt.Printf("  季度盈亏率: %.2f%%\n", quarterlyRate)
 	fmt.Printf("  年盈亏率: %.2f%%\n", annualRate)
+
+	// 🔥 获取历史里程碑数据
+	milestones, _ := s.GetHistoricalProfitFromMilestones(userID)
+
+	monthlyActual := 0.0
+	monthlyActualRate := 0.0
+	quarterlyActual := 0.0
+	quarterlyActualRate := 0.0
+	yearlyActual := 0.0
+	yearlyActualRate := 0.0
+
+	if milestones != nil {
+		if monthly, ok := milestones["monthly"]; ok && monthly["count"] > 0 {
+			monthlyActual = monthly["profit"]
+			monthlyActualRate = monthly["rate"]
+		}
+		if quarterly, ok := milestones["quarterly"]; ok && quarterly["count"] > 0 {
+			quarterlyActual = quarterly["profit"]
+			quarterlyActualRate = quarterly["rate"]
+		}
+		if yearly, ok := milestones["yearly"]; ok && yearly["count"] > 0 {
+			yearlyActual = yearly["profit"]
+			yearlyActualRate = yearly["rate"]
+		}
+	}
 	return &model.DashboardSummary{
-		TotalRecharge:   totalRecharge,
-		CurrentValue:    totalCurrentValue,
-		TotalProfit:     totalProfit,
-		TotalProfitRate: totalProfitRate,
-		RechargeCount:   activeCount,
-		MonthlyRate:     monthlyRate,
-		QuarterlyRate:   quarterlyRate,
-		AnnualRate:      annualRate,
-		AvgHoldDays:     avgHoldDays,
-		LastUpdateTime:  time.Now().Format("2006-01-02 15:04:05"),
+		TotalRecharge:       totalRecharge,
+		CurrentValue:        totalCurrentValue,
+		TotalProfit:         totalProfit,
+		TotalProfitRate:     totalProfitRate,
+		RechargeCount:       activeCount,
+		MonthlyRate:         monthlyRate,
+		QuarterlyRate:       quarterlyRate,
+		AnnualRate:          annualRate,
+		AvgHoldDays:         avgHoldDays,
+		MonthlyActual:       monthlyActual,       // 🔥 新增
+		MonthlyActualRate:   monthlyActualRate,   // 🔥 新增
+		QuarterlyActual:     quarterlyActual,     // 🔥 新增
+		QuarterlyActualRate: quarterlyActualRate, // 🔥 新增
+		YearlyActual:        yearlyActual,        // 🔥 新增
+		YearlyActualRate:    yearlyActualRate,    // 🔥 新增
+		LastUpdateTime:      time.Now().Format("2006-01-02 15:04:05"),
 	}, nil
 }
 
@@ -1334,24 +1395,9 @@ func (s *Service) UpdateAPIUserInitialBalance(userID int, initialBalance float64
 	return s.repo.UpdateUserInitialBalance(userID, initialBalance)
 }
 
-// CheckAndRecordMilestones 检查并记录所有用户的里程碑
+// CheckAndRecordMilestones 兼容旧名称
 func (s *Service) CheckAndRecordMilestones() error {
-	users, err := s.repo.GetAllUsersBasic()
-	if err != nil {
-		return err
-	}
-
-	for _, user := range users {
-		if user.IsAPIUser {
-			// 🔥 API用户：基于账户创建日期
-			s.checkAPIUserMilestones(user)
-		} else {
-			// 🔥 普通用户：基于充值日期
-			s.checkNormalUserMilestones(user)
-		}
-	}
-
-	return nil
+	return s.CheckAndRecordMonthlySnapshots()
 }
 
 // checkNormalUserMilestones 检查普通用户的里程碑（基于充值）
@@ -1374,192 +1420,143 @@ func (s *Service) checkNormalUserMilestones(user *model.User) {
 	}
 }
 
-// checkAPIUserMilestones 检查API用户的里程碑（基于账户创建日期）
-func (s *Service) checkAPIUserMilestones(user *model.User) {
-	// 获取完整用户信息
-	fullUser, err := s.repo.GetUserByID(user.ID)
-	if err != nil || fullUser == nil {
-		return
-	}
 
-	if fullUser.InitialBalance <= 0 {
-		return
-	}
 
-	daysHeld := int(time.Since(fullUser.CreatedAt).Hours() / 24)
 
-	// 检查里程碑
-	s.checkAndSaveAPIUserMilestone(fullUser, daysHeld, "monthly", 30)
-	s.checkAndSaveAPIUserMilestone(fullUser, daysHeld, "quarterly", 90)
-	s.checkAndSaveAPIUserMilestone(fullUser, daysHeld, "yearly", 365)
-}
 
-// checkAndSaveAPIUserMilestone 检查并保存API用户里程碑
-func (s *Service) checkAndSaveAPIUserMilestone(user *model.User, daysHeld int, milestoneType string, requiredDays int) {
-	if daysHeld < requiredDays {
-		return
-	}
-
-	// 使用负数recharge_id来标识API用户（避免与普通充值冲突）
-	pseudoRechargeID := -user.ID
-
-	// 检查是否已记录
-	existing, _ := s.repo.GetMilestone(pseudoRechargeID, milestoneType)
-	if existing != nil {
-		return
-	}
-
-	// 获取当前余额
-	userAccount := &model.AdminAccount{
-		AccountType: user.APIType,
-		APIKey:      user.APIKey,
-		APISecret:   user.APISecret,
-		Passphrase:  user.APIPassphrase,
-	}
-
-	var currency string
-	if user.APIType == "Binance" {
-		currency = "USDC"
-	} else if user.APIType == "OKX" {
-		currency = "USDT"
-	} else {
-		return
-	}
-
-	currentBalance, err := s.walletService.GetBalanceByAsset(userAccount, currency)
-	if err != nil {
-		return
-	}
-
-	profit := currentBalance - user.InitialBalance
-	profitRate := 0.0
-	if user.InitialBalance > 0 {
-		profitRate = (profit / user.InitialBalance) * 100
-	}
-
-	netValue := currentBalance / user.InitialBalance
-
-	// 保存里程碑
-	err = s.repo.SaveMilestone(
-		pseudoRechargeID,
-		user.ID,
-		milestoneType,
-		daysHeld,
-		user.InitialBalance,
-		currentBalance,
-		profit,
-		profitRate,
-		netValue,
-	)
-
-	if err != nil {
-		fmt.Printf("⚠️  保存API用户里程碑失败 (用户ID %d, %s): %v\n", user.ID, milestoneType, err)
-	} else {
-		fmt.Printf("✓ API用户%d 达成%s里程碑 (持有%d天, 盈亏$%.2f)\n",
-			user.ID, milestoneType, daysHeld, profit)
-	}
-}
-
-// checkAndSaveMilestone 检查并保存单个里程碑
-func (s *Service) checkAndSaveMilestone(recharge *model.Recharge, daysHeld int, milestoneType string, requiredDays int) {
-	// 1. 检查是否达到天数要求
-	if daysHeld < requiredDays {
-		return
-	}
-
-	// 2. 检查是否已经记录过
-	existing, _ := s.repo.GetMilestone(recharge.ID, milestoneType)
-	if existing != nil {
-		return
-	}
-
-	// 3. 计算当前盈亏
-	account, err := s.repo.GetAdminAccountByID(recharge.AdminAccountID)
-	if err != nil || account == nil {
-		return
-	}
-
-	totalRechargeAmount, err := s.repo.GetTotalRechargeAmountByCurrency(recharge.AdminAccountID, recharge.Currency)
-	if err != nil || totalRechargeAmount <= 0 {
-		return
-	}
-
-	currentBalance, err := s.walletService.GetBalanceByAsset(account, recharge.Currency)
-	if err != nil {
-		return
-	}
-
-	netValue := currentBalance / totalRechargeAmount
-	currentValue := recharge.Amount * netValue
-	profit := currentValue - recharge.Amount
-	profitRate := 0.0
-	if recharge.Amount > 0 {
-		profitRate = (profit / recharge.Amount) * 100
-	}
-
-	// 4. 保存里程碑
-	err = s.repo.SaveMilestone(
-		recharge.ID,
-		recharge.UserID,
-		milestoneType,
-		daysHeld,
-		recharge.Amount,
-		currentValue,
-		profit,
-		profitRate,
-		netValue,
-	)
-
-	if err != nil {
-		fmt.Printf("⚠️  保存里程碑失败 (充值ID %d, %s): %v\n", recharge.ID, milestoneType, err)
-	} else {
-		fmt.Printf("✓ 充值ID %d 达成%s里程碑 (持有%d天, 盈亏$%.2f)\n",
-			recharge.ID, milestoneType, daysHeld, profit)
-	}
-}
-
-// GetHistoricalProfitFromMilestones 从里程碑获取历史实际盈亏
+// GetHistoricalProfitFromMilestones 从月度快照获取历史实际盈亏
 func (s *Service) GetHistoricalProfitFromMilestones(userID int) (map[string]map[string]float64, error) {
-	recharges, err := s.repo.GetRechargesByUserID(userID)
+	user, err := s.repo.GetUserByID(userID)
 	if err != nil {
 		return nil, err
 	}
-
+	
 	result := map[string]map[string]float64{
 		"monthly":   {"profit": 0, "rate": 0, "count": 0},
 		"quarterly": {"profit": 0, "rate": 0, "count": 0},
 		"yearly":    {"profit": 0, "rate": 0, "count": 0},
 	}
-
-	for _, r := range recharges {
-		if !r.IsActive {
-			continue
+	
+	if user.IsAPIUser {
+		// 🔥 API用户：使用负数ID
+		pseudoRechargeID := -userID
+		
+		// 近30天 = 最近1个快照
+		monthlySnapshots, err := s.repo.GetRecentSnapshots(pseudoRechargeID, 1)
+		if err == nil && len(monthlySnapshots) > 0 {
+			totalProfit := 0.0
+			totalRate := 0.0
+			for _, snap := range monthlySnapshots {
+				totalProfit += snap["period_profit"].(float64)
+				totalRate += snap["period_profit_rate"].(float64)
+			}
+			result["monthly"]["profit"] = totalProfit
+			result["monthly"]["rate"] = totalRate / float64(len(monthlySnapshots))
+			result["monthly"]["count"] = float64(len(monthlySnapshots))
 		}
-
-		// 查询各个里程碑
-		for _, milestoneType := range []string{"monthly", "quarterly", "yearly"} {
-			milestone, err := s.repo.GetMilestone(r.ID, milestoneType)
-			if err != nil {
+		
+		// 近90天 = 最近3个快照
+		quarterlySnapshots, err := s.repo.GetRecentSnapshots(pseudoRechargeID, 3)
+		if err == nil && len(quarterlySnapshots) > 0 {
+			totalProfit := 0.0
+			totalRate := 0.0
+			for _, snap := range quarterlySnapshots {
+				totalProfit += snap["period_profit"].(float64)
+				totalRate += snap["period_profit_rate"].(float64)
+			}
+			result["quarterly"]["profit"] = totalProfit
+			result["quarterly"]["rate"] = totalRate / float64(len(quarterlySnapshots))
+			result["quarterly"]["count"] = float64(len(quarterlySnapshots))
+		}
+		
+		// 近365天 = 最近12个快照
+		yearlySnapshots, err := s.repo.GetRecentSnapshots(pseudoRechargeID, 12)
+		if err == nil && len(yearlySnapshots) > 0 {
+			totalProfit := 0.0
+			totalRate := 0.0
+			for _, snap := range yearlySnapshots {
+				totalProfit += snap["period_profit"].(float64)
+				totalRate += snap["period_profit_rate"].(float64)
+			}
+			result["yearly"]["profit"] = totalProfit
+			result["yearly"]["rate"] = totalRate / float64(len(yearlySnapshots))
+			result["yearly"]["count"] = float64(len(yearlySnapshots))
+		}
+		
+	} else {
+		// 🔥 普通用户：累加所有充值的快照
+		recharges, err := s.repo.GetRechargesByUserID(userID)
+		if err != nil {
+			return nil, err
+		}
+		
+		monthlyTotal := 0.0
+		monthlyRateSum := 0.0
+		monthlyCount := 0
+		
+		quarterlyTotal := 0.0
+		quarterlyRateSum := 0.0
+		quarterlyCount := 0
+		
+		yearlyTotal := 0.0
+		yearlyRateSum := 0.0
+		yearlyCount := 0
+		
+		for _, r := range recharges {
+			if !r.IsActive {
 				continue
 			}
-
-			profit := milestone["profit"].(float64)
-			profitRate := milestone["profit_rate"].(float64)
-
-			result[milestoneType]["profit"] += profit
-			result[milestoneType]["rate"] += profitRate
-			result[milestoneType]["count"]++
+			
+			// 近30天 = 最近1个快照
+			monthlySnapshots, err := s.repo.GetRecentSnapshots(r.ID, 1)
+			if err == nil && len(monthlySnapshots) > 0 {
+				for _, snap := range monthlySnapshots {
+					monthlyTotal += snap["period_profit"].(float64)
+					monthlyRateSum += snap["period_profit_rate"].(float64)
+					monthlyCount++
+				}
+			}
+			
+			// 近90天 = 最近3个快照
+			quarterlySnapshots, err := s.repo.GetRecentSnapshots(r.ID, 3)
+			if err == nil && len(quarterlySnapshots) > 0 {
+				for _, snap := range quarterlySnapshots {
+					quarterlyTotal += snap["period_profit"].(float64)
+					quarterlyRateSum += snap["period_profit_rate"].(float64)
+					quarterlyCount++
+				}
+			}
+			
+			// 近365天 = 最近12个快照
+			yearlySnapshots, err := s.repo.GetRecentSnapshots(r.ID, 12)
+			if err == nil && len(yearlySnapshots) > 0 {
+				for _, snap := range yearlySnapshots {
+					yearlyTotal += snap["period_profit"].(float64)
+					yearlyRateSum += snap["period_profit_rate"].(float64)
+					yearlyCount++
+				}
+			}
+		}
+		
+		if monthlyCount > 0 {
+			result["monthly"]["profit"] = monthlyTotal
+			result["monthly"]["rate"] = monthlyRateSum / float64(monthlyCount)
+			result["monthly"]["count"] = float64(monthlyCount)
+		}
+		
+		if quarterlyCount > 0 {
+			result["quarterly"]["profit"] = quarterlyTotal
+			result["quarterly"]["rate"] = quarterlyRateSum / float64(quarterlyCount)
+			result["quarterly"]["count"] = float64(quarterlyCount)
+		}
+		
+		if yearlyCount > 0 {
+			result["yearly"]["profit"] = yearlyTotal
+			result["yearly"]["rate"] = yearlyRateSum / float64(yearlyCount)
+			result["yearly"]["count"] = float64(yearlyCount)
 		}
 	}
-
-	// 计算平均盈亏率
-	for _, milestoneType := range []string{"monthly", "quarterly", "yearly"} {
-		count := result[milestoneType]["count"]
-		if count > 0 {
-			result[milestoneType]["rate"] = result[milestoneType]["rate"] / count
-		}
-	}
-
+	
 	return result, nil
 }
 
@@ -1606,21 +1603,7 @@ func (s *Service) WithdrawRecharge(rechargeID, userID int) error {
 
 	daysHeld := int(time.Since(recharge.RechargeAt).Hours() / 24)
 
-	// 3. 保存撤资里程碑
-	err = s.repo.SaveMilestone(
-		recharge.ID,
-		recharge.UserID,
-		"withdrawal",
-		daysHeld,
-		recharge.Amount,
-		withdrawnAmount,
-		finalProfit,
-		finalProfitRate,
-		netValue,
-	)
-	if err != nil {
-		return err
-	}
+	
 
 	// 4. 记录撤资并停用充值
 	err = s.repo.RecordWithdrawal(
@@ -1646,4 +1629,217 @@ func (s *Service) WithdrawRecharge(rechargeID, userID int) error {
 // GetWithdrawals 获取用户的撤资记录
 func (s *Service) GetWithdrawals(userID int) ([]*model.Withdrawal, error) {
 	return s.repo.GetWithdrawals(userID)
+}
+
+// CheckAndRecordMonthlySnapshots 检查并记录所有充值的月度快照
+func (s *Service) CheckAndRecordMonthlySnapshots() error {
+	users, err := s.repo.GetAllUsersBasic()
+	if err != nil {
+		return err
+	}
+	
+	for _, user := range users {
+		if user.IsAPIUser {
+			s.checkAPIUserMonthlySnapshots(user)
+		} else {
+			s.checkNormalUserMonthlySnapshots(user)
+		}
+	}
+	
+	return nil
+}
+
+// checkNormalUserMonthlySnapshots 检查普通用户的月度快照
+func (s *Service) checkNormalUserMonthlySnapshots(user *model.User) {
+	recharges, err := s.repo.GetRechargesByUserID(user.ID)
+	if err != nil {
+		return
+	}
+	
+	for _, r := range recharges {
+		if !r.IsActive {
+			continue
+		}
+		
+		daysHeld := int(time.Since(r.RechargeAt).Hours() / 24)
+		expectedPeriods := daysHeld / 30
+		
+		if expectedPeriods == 0 {
+			continue
+		}
+		
+		lastPeriod, _ := s.repo.GetLastSnapshotPeriod(r.ID)
+		
+		if expectedPeriods > lastPeriod {
+			for period := lastPeriod + 1; period <= expectedPeriods; period++ {
+				s.recordMonthlySnapshot(r, period)
+			}
+		}
+	}
+}
+
+// checkAPIUserMonthlySnapshots 检查API用户的月度快照
+func (s *Service) checkAPIUserMonthlySnapshots(user *model.User) {
+	fullUser, err := s.repo.GetUserByID(user.ID)
+	if err != nil || fullUser == nil {
+		return
+	}
+	
+	if fullUser.InitialBalance <= 0 {
+		return
+	}
+	
+	// 使用负数ID作为伪充值ID
+	pseudoRechargeID := -fullUser.ID
+	
+	daysHeld := int(time.Since(fullUser.CreatedAt).Hours() / 24)
+	expectedPeriods := daysHeld / 30
+	
+	if expectedPeriods == 0 {
+		return
+	}
+	
+	lastPeriod, _ := s.repo.GetLastSnapshotPeriod(pseudoRechargeID)
+	
+	if expectedPeriods > lastPeriod {
+		// 创建伪充值记录用于计算
+		pseudoRecharge := &model.Recharge{
+			ID:              pseudoRechargeID,
+			UserID:          fullUser.ID,
+			Amount:          fullUser.InitialBalance,
+			AdminAccountID:  0, // 不使用
+			Currency:        "",
+			RechargeAt:      fullUser.CreatedAt,
+			IsActive:        true,
+		}
+		
+		for period := lastPeriod + 1; period <= expectedPeriods; period++ {
+			s.recordAPIUserMonthlySnapshot(fullUser, pseudoRecharge, period)
+		}
+	}
+}
+
+// recordMonthlySnapshot 记录普通用户的月度快照
+func (s *Service) recordMonthlySnapshot(recharge *model.Recharge, periodNumber int) error {
+	account, err := s.repo.GetAdminAccountByID(recharge.AdminAccountID)
+	if err != nil {
+		return err
+	}
+	
+	totalRechargeAmount, err := s.repo.GetTotalRechargeAmountByCurrency(recharge.AdminAccountID, recharge.Currency)
+	if err != nil || totalRechargeAmount <= 0 {
+		return err
+	}
+	
+	currentBalance, err := s.walletService.GetBalanceByAsset(account, recharge.Currency)
+	if err != nil {
+		return err
+	}
+	
+	netValue := currentBalance / totalRechargeAmount
+	endValue := recharge.Amount * netValue
+	
+	var startValue float64
+	if periodNumber == 1 {
+		startValue = recharge.Amount
+	} else {
+		prevSnapshot, err := s.repo.GetMonthlySnapshot(recharge.ID, periodNumber-1)
+		if err != nil {
+			return err
+		}
+		startValue = prevSnapshot["end_value"].(float64)
+	}
+	
+	periodProfit := endValue - startValue
+	periodProfitRate := 0.0
+	if startValue > 0 {
+		periodProfitRate = (periodProfit / startValue) * 100
+	}
+	
+	err = s.repo.SaveMonthlySnapshot(
+		recharge.ID,
+		recharge.UserID,
+		periodNumber,
+		30,
+		recharge.Amount,
+		startValue,
+		endValue,
+		periodProfit,
+		periodProfitRate,
+		netValue,
+	)
+	
+	if err != nil {
+		fmt.Printf("⚠️  保存快照失败 (充值ID %d, 周期 %d): %v\n", recharge.ID, periodNumber, err)
+	} else {
+		fmt.Printf("✓ 充值ID %d 第%d个月度快照已记录 (盈亏: $%.2f)\n", recharge.ID, periodNumber, periodProfit)
+	}
+	
+	return err
+}
+
+// recordAPIUserMonthlySnapshot 记录API用户的月度快照
+func (s *Service) recordAPIUserMonthlySnapshot(user *model.User, pseudoRecharge *model.Recharge, periodNumber int) error {
+	userAccount := &model.AdminAccount{
+		AccountType: user.APIType,
+		APIKey:      user.APIKey,
+		APISecret:   user.APISecret,
+		Passphrase:  user.APIPassphrase,
+	}
+	
+	var currency string
+	if user.APIType == "Binance" {
+		currency = "USDC"
+	} else if user.APIType == "OKX" {
+		currency = "USDT"
+	} else {
+		return fmt.Errorf("不支持的API类型")
+	}
+	
+	currentBalance, err := s.walletService.GetBalanceByAsset(userAccount, currency)
+	if err != nil {
+		return err
+	}
+	
+	endValue := currentBalance
+	
+	var startValue float64
+	if periodNumber == 1 {
+		startValue = user.InitialBalance
+	} else {
+		prevSnapshot, err := s.repo.GetMonthlySnapshot(pseudoRecharge.ID, periodNumber-1)
+		if err != nil {
+			return err
+		}
+		startValue = prevSnapshot["end_value"].(float64)
+	}
+	
+	periodProfit := endValue - startValue
+	periodProfitRate := 0.0
+	if startValue > 0 {
+		periodProfitRate = (periodProfit / startValue) * 100
+	}
+	
+	netValue := currentBalance / user.InitialBalance
+	
+	err = s.repo.SaveMonthlySnapshot(
+		pseudoRecharge.ID,
+		user.ID,
+		periodNumber,
+		30,
+		user.InitialBalance,
+		startValue,
+		endValue,
+		periodProfit,
+		periodProfitRate,
+		netValue,
+	)
+	
+	if err != nil {
+		fmt.Printf("⚠️  保存API用户快照失败 (用户ID %d, 周期 %d): %v\n", user.ID, periodNumber, err)
+	} else {
+		fmt.Printf("✓ API用户%d 第%d个月度快照已记录 (盈亏: $%.2f)\n", user.ID, periodNumber, periodProfit)
+	}
+	
+	return err
 }

@@ -1148,3 +1148,100 @@ func (r *Repository) GetWithdrawals(userID int) ([]*model.Withdrawal, error) {
 
 	return withdrawals, nil
 }
+
+// SaveMonthlySnapshot 保存月度快照
+func (r *Repository) SaveMonthlySnapshot(rechargeID, userID, periodNumber, daysInPeriod int, amount, startValue, endValue, periodProfit, periodProfitRate, netValue float64) error {
+	snapshotDate := time.Now().Format("2006-01-02")
+	
+	_, err := r.db.Exec(`
+		INSERT OR REPLACE INTO recharge_monthly_snapshots 
+		(recharge_id, user_id, snapshot_date, period_number, days_in_period, amount, start_value, end_value, period_profit, period_profit_rate, net_value)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, rechargeID, userID, snapshotDate, periodNumber, daysInPeriod, amount, startValue, endValue, periodProfit, periodProfitRate, netValue)
+	
+	return err
+}
+
+// GetMonthlySnapshot 获取指定周期的快照
+func (r *Repository) GetMonthlySnapshot(rechargeID int, periodNumber int) (map[string]interface{}, error) {
+	var snapshot map[string]interface{}
+	var snapshotDate string
+	var daysInPeriod int
+	var amount, startValue, endValue, periodProfit, periodProfitRate, netValue float64
+	
+	err := r.db.QueryRow(`
+		SELECT snapshot_date, days_in_period, amount, start_value, end_value, period_profit, period_profit_rate, net_value
+		FROM recharge_monthly_snapshots
+		WHERE recharge_id = ? AND period_number = ?
+	`, rechargeID, periodNumber).Scan(&snapshotDate, &daysInPeriod, &amount, &startValue, &endValue, &periodProfit, &periodProfitRate, &netValue)
+	
+	if err != nil {
+		return nil, err
+	}
+	
+	snapshot = map[string]interface{}{
+		"snapshot_date":      snapshotDate,
+		"days_in_period":     daysInPeriod,
+		"amount":             amount,
+		"start_value":        startValue,
+		"end_value":          endValue,
+		"period_profit":      periodProfit,
+		"period_profit_rate": periodProfitRate,
+		"net_value":          netValue,
+	}
+	
+	return snapshot, nil
+}
+
+// GetLastSnapshotPeriod 获取最后记录的周期号
+func (r *Repository) GetLastSnapshotPeriod(rechargeID int) (int, error) {
+	var lastPeriod int
+	
+	err := r.db.QueryRow(`
+		SELECT COALESCE(MAX(period_number), 0)
+		FROM recharge_monthly_snapshots
+		WHERE recharge_id = ?
+	`, rechargeID).Scan(&lastPeriod)
+	
+	return lastPeriod, err
+}
+
+// GetRecentSnapshots 获取最近N个周期的快照
+func (r *Repository) GetRecentSnapshots(rechargeID int, count int) ([]map[string]interface{}, error) {
+	rows, err := r.db.Query(`
+		SELECT period_number, snapshot_date, period_profit, period_profit_rate, start_value, end_value
+		FROM recharge_monthly_snapshots
+		WHERE recharge_id = ?
+		ORDER BY period_number DESC
+		LIMIT ?
+	`, rechargeID, count)
+	
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	
+	var snapshots []map[string]interface{}
+	for rows.Next() {
+		var periodNumber int
+		var snapshotDate string
+		var periodProfit, periodProfitRate, startValue, endValue float64
+		
+		err := rows.Scan(&periodNumber, &snapshotDate, &periodProfit, &periodProfitRate, &startValue, &endValue)
+		if err != nil {
+			return nil, err
+		}
+		
+		snapshot := map[string]interface{}{
+			"period_number":      periodNumber,
+			"snapshot_date":      snapshotDate,
+			"period_profit":      periodProfit,
+			"period_profit_rate": periodProfitRate,
+			"start_value":        startValue,
+			"end_value":          endValue,
+		}
+		snapshots = append(snapshots, snapshot)
+	}
+	
+	return snapshots, nil
+}
