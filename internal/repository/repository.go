@@ -1008,27 +1008,17 @@ func (r *Repository) UpdateUserInitialBalance(userID int, initialBalance float64
 }
 
 // GetTotalRechargeAmountByCurrency 获取某个账户某个币种的总充值金额（不包括系统充值）
-// GetTotalRechargeAmountByCurrency 获取某个账户某个币种的总充值金额
 func (r *Repository) GetTotalRechargeAmountByCurrency(adminAccountID int, currency string) (float64, error) {
 	var totalAmount float64
-
-	fmt.Printf("🔍 [GetTotalRechargeAmountByCurrency] 输入参数: adminAccountID=%d, currency=%s\n", adminAccountID, currency)
-
-	query := `
+	err := r.db.QueryRow(`
 		SELECT COALESCE(SUM(amount), 0)
 		FROM recharges
 		WHERE admin_account_id = ? 
-		  AND currency = ? 
+		  AND currency = ?
 		  AND is_active = 1
-		  AND shares > 0` //🔥 改为只统计有份额的记录
-
-	fmt.Printf("🔍 [GetTotalRechargeAmountByCurrency] 执行SQL: %s\n", query)
-	fmt.Printf("🔍 [GetTotalRechargeAmountByCurrency] SQL参数: [%d, %s]\n", adminAccountID, currency)
-
-	err := r.db.QueryRow(query, adminAccountID, currency).Scan(&totalAmount)
-
-	fmt.Printf("🔍 [GetTotalRechargeAmountByCurrency] 查询结果: totalAmount=%.2f, err=%v\n", totalAmount, err)
-
+		  AND user_id > 0
+	`, adminAccountID, currency).Scan(&totalAmount)
+	
 	return totalAmount, err
 }
 
