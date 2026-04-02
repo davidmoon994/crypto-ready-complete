@@ -922,7 +922,7 @@ async function viewUserDetail(userId) {
     }
 }
 
-// Admin撤资确认（支持部分撤资）
+// Admin撤资确认（基于本金撤资）
 async function confirmWithdraw(rechargeId, userId) {
     // 先获取充值信息
     const response = await fetch(`${API_URL}/admin/users/${userId}`, {
@@ -943,43 +943,53 @@ async function confirmWithdraw(rechargeId, userId) {
     }
     
     const currentValue = recharge.amount * (1 + recharge.current_rate / 100);
+    const netValue = currentValue / recharge.amount;
     
-    // 弹出输入框
-    const withdrawAmount = prompt(
-        `💰 部分撤资\n\n` +
-        `原始充值: $${recharge.amount.toFixed(2)}\n` +
+    // 🔥 弹出输入框（基于本金）
+    const withdrawPrincipal = prompt(
+        `💰 部分撤资（基于本金）\n\n` +
+        `原始本金: $${recharge.amount.toFixed(2)}\n` +
+        `当前净值: ${netValue.toFixed(4)}\n` +
         `当前价值: $${currentValue.toFixed(2)}\n` +
         `当前盈亏: $${recharge.current_profit.toFixed(2)} (${recharge.current_rate.toFixed(2)}%)\n\n` +
-        `请输入撤资金额（基于当前价值）：`,
-        currentValue.toFixed(2)
+        `请输入撤资本金（从原始本金中提取）：`,
+        recharge.amount.toFixed(2)
     );
     
-    if (!withdrawAmount) {
+    if (!withdrawPrincipal) {
         return; // 用户取消
     }
     
-    const amount = parseFloat(withdrawAmount);
+    const principal = parseFloat(withdrawPrincipal);
     
-    if (isNaN(amount) || amount <= 0) {
+    if (isNaN(principal) || principal <= 0) {
         alert('❌ 请输入有效的金额');
         return;
     }
     
-    if (amount > currentValue) {
-        alert(`❌ 撤资金额不能超过当前价值 $${currentValue.toFixed(2)}`);
+    if (principal > recharge.amount) {
+        alert(`❌ 撤资本金不能超过原始充值 $${recharge.amount.toFixed(2)}`);
         return;
     }
     
-    const isFull = amount >= currentValue * 0.999; // 允许0.1%误差
-    const remainingValue = currentValue - amount;
+    const isFull = principal >= recharge.amount * 0.999; // 允许0.1%误差
+    
+    // 🔥 计算实际提取金额（本金 × 净值）
+    const withdrawAmount = principal * netValue;
+    const withdrawProfit = withdrawAmount - principal;
+    const remainingPrincipal = recharge.amount - principal;
+    const remainingValue = remainingPrincipal * netValue;
     
     let confirmMsg = `⚠️  确认撤资信息：\n\n`;
-    confirmMsg += `撤资金额: $${amount.toFixed(2)}\n`;
+    confirmMsg += `撤资本金: $${principal.toFixed(2)}\n`;
+    confirmMsg += `实际提取: $${withdrawAmount.toFixed(2)}\n`;
+    confirmMsg += `撤资盈亏: $${withdrawProfit.toFixed(2)}\n`;
     
     if (isFull) {
         confirmMsg += `撤资类型: 全部撤资\n`;
     } else {
         confirmMsg += `撤资类型: 部分撤资\n`;
+        confirmMsg += `剩余本金: $${remainingPrincipal.toFixed(2)}\n`;
         confirmMsg += `剩余价值: $${remainingValue.toFixed(2)}\n`;
         confirmMsg += `\n剩余部分将继续持有并参与盈亏计算。\n`;
     }
@@ -1000,7 +1010,7 @@ async function confirmWithdraw(rechargeId, userId) {
             body: JSON.stringify({
                 recharge_id: rechargeId,
                 user_id: userId,
-                withdraw_amount: amount
+                withdraw_principal: principal  // 🔥 传递本金，不是价值
             })
         });
         
@@ -1008,10 +1018,7 @@ async function confirmWithdraw(rechargeId, userId) {
             const result = await response.json();
             alert('✅ 撤资成功！\n\n' + (result.message || '操作已完成'));
             
-            // 重新加载用户详情
             viewUserDetail(userId);
-            
-            // 刷新用户列表
             loadUsers();
         } else {
             const data = await response.json();

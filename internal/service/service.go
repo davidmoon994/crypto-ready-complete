@@ -1412,8 +1412,8 @@ func (s *Service) checkNormalUserMilestones(user *model.User) {
 }
 
 
-// WithdrawRechargePartial 部分撤资
-func (s *Service) WithdrawRechargePartial(rechargeID, userID int, withdrawAmount float64) error {
+// WithdrawRechargePartial 部分撤资（基于本金）
+func (s *Service) WithdrawRechargePartial(rechargeID, userID int, withdrawPrincipal float64) error {
 	// 1. 验证权限
 	recharge, err := s.repo.GetRechargeByID(rechargeID)
 	if err != nil {
@@ -1429,7 +1429,12 @@ func (s *Service) WithdrawRechargePartial(rechargeID, userID int, withdrawAmount
 		return errors.New("该充值已停用")
 	}
 	
-	// 2. 计算当前价值
+	// 2. 验证撤资本金
+	if withdrawPrincipal > recharge.Amount {
+		return fmt.Errorf("撤资本金 $%.2f 超过原充值 $%.2f", withdrawPrincipal, recharge.Amount)
+	}
+	
+	// 3. 计算当前净值
 	account, err := s.repo.GetAdminAccountByID(recharge.AdminAccountID)
 	if err != nil || account == nil {
 		return errors.New("无法获取账户信息")
@@ -1446,33 +1451,31 @@ func (s *Service) WithdrawRechargePartial(rechargeID, userID int, withdrawAmount
 	}
 	
 	netValue := currentBalance / totalRechargeAmount
-	currentValue := recharge.Amount * netValue
 	
-	// 3. 验证撤资金额
-	if withdrawAmount > currentValue {
-		return fmt.Errorf("撤资金额 $%.2f 超过当前价值 $%.2f", withdrawAmount, currentValue)
+	// 4. 计算撤资金额（本金 × 净值）
+	withdrawAmount := withdrawPrincipal * netValue
+	withdrawProfit := withdrawAmount - withdrawPrincipal
+	withdrawProfitRate := 0.0
+	if withdrawPrincipal > 0 {
+		withdrawProfitRate = (withdrawProfit / withdrawPrincipal) * 100
 	}
+	
+	remainingPrincipal := recharge.Amount - withdrawPrincipal
 	
 	daysHeld := int(time.Since(recharge.RechargeAt).Hours() / 24)
 	
-	// 4. 判断是全部撤资还是部分撤资
-	isFull := withdrawAmount >= currentValue*0.999 // 允许0.1%误差
+	// 5. 判断是全部撤资还是部分撤资
+	isFull := withdrawPrincipal >= recharge.Amount*0.999
 	
 	if isFull {
 		// 全部撤资
-		finalProfit := currentValue - recharge.Amount
-		finalProfitRate := 0.0
-		if recharge.Amount > 0 {
-			finalProfitRate = (finalProfit / recharge.Amount) * 100
-		}
-		
 		err = s.repo.RecordWithdrawal(
 			recharge.ID,
 			userID,
 			recharge.Amount,
-			currentValue,
-			finalProfit,
-			finalProfitRate,
+			withdrawAmount,
+			withdrawProfit,
+			withdrawProfitRate,
 			daysHeld,
 		)
 		
@@ -1480,25 +1483,13 @@ func (s *Service) WithdrawRechargePartial(rechargeID, userID int, withdrawAmount
 			return err
 		}
 		
-		fmt.Printf("✓ 用户%d 全部撤资: 充值$%.2f, 提取$%.2f, 盈亏$%.2f (%.2f%%), 持有%d天\n",
-			userID, recharge.Amount, currentValue, finalProfit, finalProfitRate, daysHeld)
+		fmt.Printf("✓ 用户%d 全部撤资: 本金$%.2f, 提取$%.2f, 盈亏$%.2f (%.2f%%), 持有%d天\n",
+			userID, recharge.Amount, withdrawAmount, withdrawProfit, withdrawProfitRate, daysHeld)
 		
 	} else {
 		// 部分撤资
-		remainingValue := currentValue - withdrawAmount
+		remainingValue := remainingPrincipal * netValue
 		
-		// 计算撤资部分对应的原始本金
-		withdrawRatio := withdrawAmount / currentValue
-		withdrawPrincipal := recharge.Amount * withdrawRatio
-		remainingPrincipal := recharge.Amount - withdrawPrincipal
-		
-		withdrawProfit := withdrawAmount - withdrawPrincipal
-		withdrawProfitRate := 0.0
-		if withdrawPrincipal > 0 {
-			withdrawProfitRate = (withdrawProfit / withdrawPrincipal) * 100
-		}
-		
-		// 5. 记录部分撤资
 		err = s.repo.RecordPartialWithdrawal(
 			recharge.ID,
 			userID,
@@ -1518,13 +1509,12 @@ func (s *Service) WithdrawRechargePartial(rechargeID, userID int, withdrawAmount
 			return err
 		}
 		
-		fmt.Printf("✓ 用户%d 部分撤资: 提取$%.2f (盈亏$%.2f), 剩余$%.2f继续持有, 持有%d天\n",
-			userID, withdrawAmount, withdrawProfit, remainingValue, daysHeld)
+		fmt.Printf("✓ 用户%d 部分撤资: 本金$%.2f, 提取$%.2f (盈亏$%.2f), 剩余本金$%.2f (价值$%.2f), 持有%d天\n",
+			userID, withdrawPrincipal, withdrawAmount, withdrawProfit, remainingPrincipal, remainingValue, daysHeld)
 	}
 	
 	return nil
 }
-
 
 // GetHistoricalProfitFromMilestones 从月度快照获取历史实际盈亏
 func (s *Service) GetHistoricalProfitFromMilestones(userID int) (map[string]map[string]float64, error) {

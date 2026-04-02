@@ -586,12 +586,12 @@ func (h *Handler) UpdateAPIInitialBalance(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "初始余额已更新"})
 }
 
-// AdminWithdrawRecharge Admin帮用户撤资（支持部分撤资）
+// AdminWithdrawRecharge Admin帮用户撤资（基于本金）
 func (h *Handler) AdminWithdrawRecharge(c *gin.Context) {
 	var req struct {
-		RechargeID     int     `json:"recharge_id" binding:"required"`
-		UserID         int     `json:"user_id" binding:"required"`
-		WithdrawAmount float64 `json:"withdraw_amount" binding:"required,gt=0"`
+		RechargeID        int     `json:"recharge_id" binding:"required"`
+		UserID            int     `json:"user_id" binding:"required"`
+		WithdrawPrincipal float64 `json:"withdraw_principal" binding:"required,gt=0"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -599,7 +599,7 @@ func (h *Handler) AdminWithdrawRecharge(c *gin.Context) {
 		return
 	}
 
-	err := h.service.WithdrawRechargePartial(req.RechargeID, req.UserID, req.WithdrawAmount)
+	err := h.service.WithdrawRechargePartial(req.RechargeID, req.UserID, req.WithdrawPrincipal)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -607,7 +607,6 @@ func (h *Handler) AdminWithdrawRecharge(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "撤资成功"})
 }
-
 // GetWithdrawals 获取撤资记录
 func (h *Handler) GetWithdrawals(c *gin.Context) {
 	userID, exists := c.Get("userID")
